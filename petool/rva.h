@@ -77,7 +77,7 @@ public:
     }
     inline bool operator > (Rva other) const
     {
-        return m_va == other.m_va;
+        return m_va > other.m_va;
     }
 
     inline bool operator >= (Rva other) const

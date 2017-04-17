@@ -146,11 +146,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BasicBlock.cpp" />
+    <ClCompile Include="BasicBlockAnalyzer.cpp" />
+    <ClCompile Include="Disassemble.cpp" />
     <ClCompile Include="petool.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="rva.h" />
-    <ClInclude Include="unwind.h" />
+    <ClInclude Include="BasicBlock.h" />
+    <ClInclude Include="BasicBlockAnalyzer.h" />
+    <ClInclude Include="Disassemble.h" />
+    <ClInclude Include="Rva.h" />
+    <ClInclude Include="Target.h" />
+    <ClInclude Include="Unwind.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

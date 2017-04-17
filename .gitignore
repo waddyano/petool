@@ -28,3 +28,6 @@
 /petool.mydis
 /petool.sdf
 /*.suo
+/.vs/VisDiff/v14/*.suo
+/*.bak
+/*.exe

@@ -13,8 +13,12 @@
 #include <unordered_set>
 #include <vector>
 
-#include "rva.h"
-#include "unwind.h"
+#include "BasicBlock.h"
+#include "BasicBlockAnalyzer.h"
+#include "Disassemble.h"
+#include "Rva.h"
+#include "Target.h"
+#include "Unwind.h"
 
 static const char *directoryNames[] =
 {
@@ -369,79 +373,6 @@ public:
         }
     }
 
-	typedef std::function<bool(const _CodeInfo &ci, Rva va, const _DInst &dinst)> InstructionHandler;
-
-    enum class TargetType
-    {
-        FUNCTION,
-        CFUNCTION,
-        RFUNCTION,
-        LABEL,
-        ENTRY,
-        DATA
-    };
-
-	struct TargetInfo
-	{
-		explicit TargetInfo(TargetType t) : label(0), targetType(t), defined(false)
-		{
-		}
-		explicit TargetInfo(TargetType t, bool d) : label(0), targetType(t), defined(d)
-		{
-		}
-		unsigned int label;
-        TargetType targetType;
-		bool defined;
-	};
-
-	std::map<Rva, TargetInfo> m_targets;
-	std::set<Rva> m_newTargets;
-    std::set<Rva> m_processedTargets;
-    unsigned long m_bbSize;
-
-	bool GatherNewTargets(const _CodeInfo &ci, Rva va, const _DInst dinst)
-	{
-		Rva a = va + dinst.addr;
-
-        m_processedTargets.insert(a);
-        m_bbSize += dinst.size;
-
-		for (int j = 0; j < OPERANDS_NO; ++j)
-		{
-			if (dinst.ops[j].type == O_NONE)
-				break;
-			Rva target = Rva::Invalid();
-			TargetType type = dinst.opcode == I_CALL ? TargetType::CFUNCTION : TargetType::LABEL;
-
-			if (dinst.ops[j].type == O_PC)
-			{
-				target = va + INSTRUCTION_GET_TARGET(&dinst);
-			}
-			if (dinst.ops[j].type == O_SMEM && (dinst.flags & FLAG_RIP_RELATIVE) != 0)
-			{
-				target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
-			}
-
-            if (target != Rva::Invalid())
-            { 
-			    auto it = m_targets.find(target);
-			    if (it == m_targets.end() && m_vaToImportedSymbols.count(target) == 0)
-			    {
-                    auto s = Rva2Section(target);
-                    if (s != nullptr && !IsExecutable(*s))
-                        type = TargetType::DATA;
-                        
-				    m_targets.insert(std::make_pair(target, TargetInfo(type)));
-                    m_newTargets.insert(target);
-			    }
-			    else if (it != m_targets.end() && type == TargetType::CFUNCTION && it->second.targetType != TargetType::FUNCTION)
-				    it->second.targetType = type;
-            }
-		}
-
-        return dinst.opcode != I_JMP && dinst.opcode != I_RET;
-	}
-
     bool m_haveLabels = false;
 
 	void AssignLabels()
@@ -452,19 +383,12 @@ public:
 			tpair.second.label = ++lab;
 	}
 
-    struct BBState
-    {
-        int m_baseReg = R_NONE;
-    };
+    bool m_verbose = false;
 
-	void AdjustRIPOperand(const _CodeInfo &ci, Rva va, const _DInst dinst, BBState &state)
+	void AdjustRIPOperand(const _CodeInfo &ci, Rva va, const _DInst dinst, BasicBlock *bb)
     {
-        if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == state.m_baseReg)
-        { 
-            printf("Clobber!\n");
-            Printer(ci, va, dinst);
-            state.m_baseReg = R_NONE;
-        }
+        Rva a = va + dinst.addr;
+
         int operandOffset = dinst.size;
         int opSize = 4;
         int skippedOp = 128;
@@ -502,16 +426,22 @@ public:
             else if (dinst.ops[j].type == O_REG)
             {
             }
-            else if (dinst.ops[j].type == O_MEM)
+            else if ((dinst.ops[j].type == O_MEM && dinst.base != R_NONE && dinst.base == bb->baseReg) ||
+                     (dinst.ops[j].type == O_SMEM && dinst.ops[j].index == bb->baseReg))
             {
-                if (dinst.base != R_NONE && dinst.base == state.m_baseReg)
+                unsigned long off = a - bb->start;
+                if (off >= bb->baseRegSet && off < bb->baseRegClobbered)
                 {
-                    printf("using base! %llu\n", dinst.disp);
                     Rva b = Rva(dinst.disp);
-                    Printer(ci, va, dinst);
+                    if (m_verbose)
+                    {
+                        printf("using base! %llu\n", dinst.disp);
+                        Printer(ci, va, dinst);
+                    }
                     if (AdjustRva(&b))
                     {
-                        printf("needs adjust!\n");
+                        if (m_verbose)
+                            printf("needed adjust!\n");
                         adjustDisp = true;
                         operandOffset -= dinst.dispSize / 8;
                     }
@@ -537,31 +467,25 @@ public:
             return;
         }
 
-        if (dinst.opcode == I_LEA && (dinst.flags & FLAG_RIP_RELATIVE) != 0)
-        {
-            if (targetVa.ToUL() == 0)
-            {
-                state.m_baseReg = dinst.ops[0].index;
-                printf("LEA RIP! %s\n", GET_REGISTER_NAME(state.m_baseReg));
-                Printer(ci, va, dinst);
-            }
-        }
-
-
         if (adjustDisp)
         {
-			printf("Instr at %lx: Adjust disp\n", (va + dinst.addr).ToUL());
+            if (m_verbose)
+			    printf("Instr at %lx: Adjust disp\n", (va + dinst.addr).ToUL());
+
             DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
             unsigned long newDisp = (unsigned long)dinst.disp;
             AdjustRva(&newDisp);
             memcpy(dispLoc, &newDisp, 4);
             _DInst tmp(dinst);
             tmp.disp = newDisp;
-            Printer(ci, va, tmp);
+
+            if (m_verbose)
+                Printer(ci, va, tmp);
         }
         else if (AdjustRva(&targetVa))
         {
-			printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
+            if (m_verbose)
+			    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
             int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
             DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
             if (dispLoc == nullptr)
@@ -571,29 +495,9 @@ public:
                 memcpy(dispLoc, &newDisp, 4);
                 _DInst tmp(dinst);
                 tmp.disp = newDisp;
-                Printer(ci, va, tmp);
+                if (m_verbose)
+                    Printer(ci, va, tmp);
             }
-        }
-    }
-
-    static const char *ToString(TargetType type)
-    {
-        switch (type)
-        {
-        case TargetType::FUNCTION:
-            return "fn";
-        case TargetType::CFUNCTION:
-            return "cfn";
-        case TargetType::RFUNCTION:
-            return "rfn";
-        case TargetType::LABEL:
-            return "lab";
-        case TargetType::ENTRY:
-            return "entry";
-        case TargetType::DATA:
-            return "dat";
-        default:
-            return "???";
         }
     }
 
@@ -663,60 +567,6 @@ public:
         return dinst.opcode != I_JMP && dinst.opcode != I_RET;
 	}
 
-	void Disassemble(Rva va, DWORD size, InstructionHandler handler)
-	{
-		const int MAX_INSTRUCTIONS = 1000;
-	
-		unsigned char *buf = Rva2Ptr<unsigned char>(va);
-		_OffsetType offset = 0;
-
-		for (;;)
-		{
-			// Decoded instruction information.
-			_DInst decomposedInstructions[MAX_INSTRUCTIONS];
-			// next is used for instruction's offset synchronization.
-			// decodedInstructionsCount holds the count of filled instructions' array by the decoder.
-			unsigned int decodedInstructionsCount = 0;
-
-			// Default decoding mode is 32 bits, could be			// If you get an unresolved external symbol linker error for the following line,
-			// change the SUPPORT_64BIT_OFFSET in distorm.h.
-			_CodeInfo ci;
-			ci.code = buf;
-			ci.codeLen = size;
-			ci.codeOffset = offset;
-			ci.dt = Decode64Bits;
-			ci.features = DF_NONE;
-			_DecodeResult res = distorm_decompose(&ci, decomposedInstructions, MAX_INSTRUCTIONS, &decodedInstructionsCount);
-			if (res == DECRES_INPUTERR) 
-			{
-				// Null buffer? Decode type not 16/32/64?
-				printf("Input error, halting!\n");
-				break;
-			}
-
-            bool stop = false;
-			for (unsigned int i = 0; i < decodedInstructionsCount; i++) 
-			{
-				if (!handler(ci, va, decomposedInstructions[i]))
-                {
-                    stop = true;
-                    break;
-                }
-			}
-
-            if (stop)
-                break;
-
-			if (res == DECRES_SUCCESS) 
-				break; // All instructions were decoded.
-			else if (decodedInstructionsCount == 0) 
-				break;
-
-			buf += ci.nextOffset - offset;
-			size -= (DWORD)(ci.nextOffset - offset);
-			offset = ci.nextOffset;
-		}
-	}
 
     void ThrowBadFile(const char *msg)
     {
@@ -740,6 +590,9 @@ public:
 
         if (fileHeader->Machine != IMAGE_FILE_MACHINE_AMD64)
             ThrowBadFile("not 64 bit");
+
+        if ((fileHeader->Characteristics & IMAGE_FILE_RELOCS_STRIPPED) != 0)
+            ThrowBadFile("can not instrument .EXE stripped of relocations");
 
 		m_optionalHeader = reinterpret_cast<IMAGE_OPTIONAL_HEADER64 *>(fileHeader + 1);
 
@@ -785,30 +638,8 @@ public:
         return -1;
     }
 
-    struct BasicBlock
-    {
-        static int nextId;
-
-        BasicBlock(Rva s, unsigned long l) : id(++nextId), start(s), length(l)
-        {
-        }
-        BasicBlock(Rva s) : id(0), start(s), length(0)
-        {
-        }
-        unsigned int id;
-        Rva start;
-        unsigned long length;
-    };
-
-    struct BlockStartLess
-    {
-        bool operator() (const BasicBlock *a, const BasicBlock *b) const
-        {
-            return a->start < b->start;
-        }
-    };
-
     std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
+    std::map<Rva, TargetInfo> m_targets;
 
     void GatherAllTargets()
     {
@@ -818,7 +649,7 @@ public:
             printf("no text section\n");
             return;
         }
-		DWORD textVa = m_sectionHeaders[textSection].VirtualAddress;
+		Rva textVa(m_sectionHeaders[textSection].VirtualAddress);
 		DWORD textSize = m_sectionHeaders[textSection].SizeOfRawData;
 
         m_targets.clear();
@@ -838,85 +669,40 @@ public:
         GatherFunctionTable();
         GatherRelocationTargets();
 
-		if (textVa != 0)
+		if (!textVa.IsZero())
 		{
-            std::set<Rva> unprocessedTargets;
+            std::set<Rva> seedRvas;
 
             for (const auto &e : m_targets)
             { 
-                unprocessedTargets.insert(e.first); 
+                seedRvas.insert(e.first); 
             }
 
             for (const auto &e : m_exportedSymbols)
             {
-                unprocessedTargets.insert(e.first); 
+                seedRvas.insert(e.first); 
             }
 
-            while (!unprocessedTargets.empty())
+            BasicBlockAnalyzer analyzer(Rva2Ptr<unsigned char>(textVa), textVa, textSize);
+            analyzer.Analyze(std::move(seedRvas));
+            m_basicBlocks = analyzer.GetBasicBlocks();
+            for (auto p : analyzer.GetTargets())
             {
-                Rva rva = *unprocessedTargets.begin();
-
-                auto s = Rva2Section(rva);
-                if (!IsExecutable(*s))
+                auto it = m_targets.find(p.first);
+                if (it != m_targets.end())
                 {
-                    //printf("not exec! %lx\n", rva.ToUL());
-                    unprocessedTargets.erase(rva);
-                    continue;
+                    if (p.second.targetType == TargetType::CFUNCTION && it->second.targetType != TargetType::FUNCTION)
+                        it->second.targetType = TargetType::CFUNCTION;
                 }
-
-                //printf("start at %lx\n", rva.ToUL());
-                m_processedTargets.clear();
-                m_newTargets.clear();
-
-                m_bbSize = 0;
-
-                Disassemble(rva, textSize, [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->GatherNewTargets(ci, va, dinst); });
-
-                auto b = new BasicBlock(rva, m_bbSize);
-
-                m_basicBlocks.insert(b);
-
-                for (Rva target : m_processedTargets)
+                else
                 {
-                    //printf("Processsed %x\n", target.ToUL());
-                    m_newTargets.erase(target);
-                    unprocessedTargets.erase(target);
-                    if (rva != target)
-                    {
-                        BasicBlock tmp(target);
-                        m_basicBlocks.erase(&tmp);
-                    }
-                }
-
-                for (Rva target : m_newTargets)
-                {
-                    //printf("New %x\n", target.ToUL());
-                    bool alreadyProcessed = false;
-                    BasicBlock tmp(target);
-                    auto it = m_basicBlocks.upper_bound(&tmp);
-                    if (it != m_basicBlocks.end())
-                    {
-                        //printf("found %x\n", it->first);
-                        if (it != m_basicBlocks.begin())
-                        {
-                            --it;
-                            BasicBlock *bb = *it;
-                            if (target >= bb->start && target < bb->start + bb->length)
-                                alreadyProcessed = true;
-                        }
-                        else
-                            printf("refound first BB!\n");
-                        // TODO do the special cases
-                    }
-
-                    if (!alreadyProcessed)
-                        unprocessedTargets.insert(target);
+                    m_targets.insert(p);
                 }
             }
         }
     }
 
-    void Disassemble()
+    void DoDisassemble()
     {
         GatherAllTargets();
 
@@ -935,8 +721,10 @@ public:
         while (it != m_basicBlocks.end())
         {
             BasicBlock *bb = *it;
-            printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
-			Disassemble(bb->start, bb->length, [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->Printer(ci, va, dinst); });
+            printf("-- bb %lx %lx -- %lx %lx -- %s %d-%d --\n", bb->start.ToUL(), bb->length, 
+                bb->nSuccessors > 0 ? bb->successors[0].ToUL() : 0, bb->nSuccessors > 1 ? bb->successors[1].ToUL() : 0, 
+                bb->baseReg == R_NONE ? "" : (char *)GET_REGISTER_NAME(bb->baseReg), bb->baseRegSet, bb->baseRegClobbered);
+			Disassemble(Rva2Ptr<unsigned char>(bb->start), bb->start, bb->length, [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->Printer(ci, va, dinst); });
             auto nextIt = it;
             ++nextIt;
             if (nextIt != m_basicBlocks.end())
@@ -1042,7 +830,7 @@ public:
         }
     }
 
-	void Process(bool disassem, bool verbose)
+	void Process(bool disassem)
 	{
 		for (int i = 0; i < 16; ++i)
 		{
@@ -1054,10 +842,10 @@ public:
 
         if (disassem)
         {
-            Disassemble();
+            DoDisassemble();
         }
 
-        if (!disassem || verbose)
+        if (!disassem || m_verbose)
         {
 		    if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size != 0)
             {
@@ -1082,7 +870,8 @@ public:
             if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size != 0)
             {
                 IMAGE_RESOURCE_DIRECTORY *rsrc = Rva2Ptr<IMAGE_RESOURCE_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
-                DumpResourceDirectory(0, (char *)rsrc, rsrc);
+                if (m_verbose)
+                    DumpResourceDirectory(0, (char *)rsrc, rsrc);
             }
             if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size != 0)
 		    {
@@ -1143,7 +932,8 @@ public:
 
     void AdjustResourceDirectory(char *resourceBase, IMAGE_RESOURCE_DIRECTORY *rsrc)
     {
-        printf("Resource counts id %lx name %lx\n", rsrc->NumberOfIdEntries, rsrc->NumberOfNamedEntries);
+        if (m_verbose)
+            printf("Resource counts id %lx name %lx\n", rsrc->NumberOfIdEntries, rsrc->NumberOfNamedEntries);
         IMAGE_RESOURCE_DIRECTORY_ENTRY *entry = (IMAGE_RESOURCE_DIRECTORY_ENTRY *) (rsrc + 1);
         for (int i = 0; i < rsrc->NumberOfNamedEntries; ++i)
         {
@@ -1152,7 +942,8 @@ public:
         }
         for (int i = 0; i < rsrc->NumberOfIdEntries; ++i)
         {
-            printf("id %lx off %lx\n", entry->Id, entry->OffsetToData);
+            if (m_verbose)
+                printf("id %lx off %lx\n", entry->Id, entry->OffsetToData);
             if (entry->DataIsDirectory)
             {
                 IMAGE_RESOURCE_DIRECTORY *sub = (IMAGE_RESOURCE_DIRECTORY *)(resourceBase + entry->OffsetToDirectory);
@@ -1161,7 +952,8 @@ public:
             else
             {
                 IMAGE_RESOURCE_DATA_ENTRY *data = (IMAGE_RESOURCE_DATA_ENTRY *)(resourceBase + entry->OffsetToData);
-                printf("resource offset %lx\n", data->OffsetToData);
+                if (m_verbose)
+                    printf("resource offset %lx\n", data->OffsetToData);
                 AdjustRva(&data->OffsetToData);
             }
 
@@ -1175,12 +967,10 @@ public:
         while (it != m_basicBlocks.end())
         {
             BasicBlock *bb = *it;
-            printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
-            BBState state;
-            Disassemble(bb->start, bb->length, [this, &state](const _CodeInfo &ci, Rva va, const _DInst &dinst) 
+            //printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
+            Disassemble(Rva2Ptr<unsigned char>(bb->start), bb->start, bb->length, [this, bb](const _CodeInfo &ci, Rva va, const _DInst &dinst) 
             { 
-                Rva instva = va + dinst.addr;
-                this->AdjustRIPOperand(ci, va, dinst, state); 
+                this->AdjustRIPOperand(ci, va, dinst, bb); 
                 if (dinst.opcode == I_RET || dinst.opcode == I_JMP)
                 {
                     return false;
@@ -1359,13 +1149,13 @@ public:
 
         s.m_rawData = newData;
 
-        s.m_section.SizeOfRawData += extra;
-        s.m_section.Misc.VirtualSize += extra;
-
         m_optionalHeader->SizeOfInitializedData += insertions.back().vaDelta;
         m_optionalHeader->SizeOfImage += insertions.back().vaDelta;
 
         OffsetRelocations();
+
+        s.m_section.SizeOfRawData += extra;
+        s.m_section.Misc.VirtualSize += extra;
 
         AdjustSectionsAndDirectories(extra);
 
@@ -1413,7 +1203,7 @@ public:
             p +=  m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
 
             if (Ptr2Rva(p) >= insertions.back().vaInsert + insertions.back().vaDelta)
-                printf("OVERFLOW of insertion\n");
+                throw "OVERFLOW of insertion";
 
             IMAGE_THUNK_DATA *f = newIat + (oldSize / sizeof(IMAGE_THUNK_DATA));
             added->FirstThunk = Ptr2Rva(f).ToUL();
@@ -1443,13 +1233,9 @@ public:
         if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size != 0)
         {
             IMAGE_TLS_DIRECTORY64 *tls = Rva2Ptr<IMAGE_TLS_DIRECTORY64>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
-            AdjustVa(&tls->StartAddressOfRawData);
             printf("Start %llx\n", tls->StartAddressOfRawData);
-            AdjustVa(&tls->EndAddressOfRawData);
             printf("End %llx\n", tls->EndAddressOfRawData);
-            AdjustVa(&tls->AddressOfIndex);
             printf("Index %llx\n", tls->AddressOfIndex);
-            AdjustVa(&tls->AddressOfCallBacks);
             printf("Callbacks %llx\n", tls->AddressOfCallBacks);
         }
 
@@ -1573,6 +1359,7 @@ public:
 		{
 			IMAGE_BASE_RELOCATION *reloc = Rva2Ptr<IMAGE_BASE_RELOCATION>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 			DWORD sizeLeft = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
+            printf("OffsetRelocations %d\n", sizeLeft);
 			while (sizeLeft > 0)
 			{
                 WORD *r = (WORD *)(reloc + 1);
@@ -1587,14 +1374,15 @@ public:
                     {
                         uint64_t &addr = *Rva2Ptr<uint64_t>(reloc->VirtualAddress + relOffset);
 
-                        //printf("dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
-
                         Rva rva(addr - m_imageBase);
                         if (AdjustRva(&rva))
                         { 
                             addr = rva.ToUL() + m_imageBase;
+                            //printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
                         }
                     }
+                    else
+                        printf("bad reltype %d\n", relType);
                 }
 
                 if (AdjustRva(&reloc->VirtualAddress))
@@ -1616,8 +1404,6 @@ public:
 		IMAGE_OPTIONAL_HEADER64 *m_optionalHeader;
 		ULONGLONG m_imageBase;
 };
-
-int PEFile::BasicBlock::nextId;
 
 int main(int argc, char *argv[])
 {
@@ -1674,6 +1460,8 @@ int main(int argc, char *argv[])
         { 
             PEFile file(filename);
 
+            file.m_verbose = verbose;
+
             if (edit)
             {
                 std::string output = out_filename != nullptr ? out_filename : "";
@@ -1704,7 +1492,7 @@ int main(int argc, char *argv[])
             }
             else
             { 
-	            file.Process(disassem, verbose);
+	            file.Process(disassem);
             }
             printf("OK\n");
         }
