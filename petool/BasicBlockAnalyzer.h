@@ -9,6 +9,8 @@
 #include "Rva.h"
 #include "Target.h"
 
+struct BasicBlock;
+
 class BasicBlockAnalyzer
 {
 public:
@@ -28,6 +30,8 @@ public:
 private:
     bool GatherNewTargets(const _CodeInfo &ci, Rva va, const _DInst dinst);
     bool CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst);
+    bool CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
+    void CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va, const _DInst dinst);
     void PropagateBaseReg();
     void AddSuccessor(Rva next);
     bool InTextSegment(Rva rva) const
@@ -35,13 +39,17 @@ private:
         return rva >= m_textVa && rva < m_textVa + m_textSize;
     }
     void SplitBasicBlock(BasicBlock *bb, unsigned long splitOffset);
+    void AddTargetToProcess(Rva target, BasicBlock *predBB);
+
     const unsigned char *m_text;
     Rva m_textVa;
     DWORD m_textSize;
     std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
     std::map<Rva, TargetInfo> m_targets;
 	std::set<Rva> m_newTargets;
-    std::set<Rva> m_unprocessedTargets;
+    std::map<Rva, std::vector<BasicBlock *>> m_unprocessedTargets;
     BasicBlock m_newBlock;
+    int m_jumpTableState;
+    unsigned long jumpTableSize;
     DWORD m_splitAt;
 };

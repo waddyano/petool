@@ -12,13 +12,12 @@ enum class TargetType
 
 struct TargetInfo
 {
-	explicit TargetInfo(TargetType t) : label(0), targetType(t), defined(false)
+	explicit TargetInfo(TargetType t) : targetType(t), defined(false)
 	{
 	}
-	explicit TargetInfo(TargetType t, bool d) : label(0), targetType(t), defined(d)
+	explicit TargetInfo(TargetType t, bool d) : targetType(t), defined(d)
 	{
 	}
-	unsigned int label;
     TargetType targetType;
 	bool defined;
 };

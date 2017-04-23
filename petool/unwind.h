@@ -41,18 +41,23 @@ typedef struct UNWIND_INFO
             r += " chaininfo";
         return r;
     }
-#if 0
     union
     {
         //
         // If (Flags & UNW_FLAG_EHANDLER)
         //
-        OPTIONAL ULONG ExceptionHandler;
+        ULONG ExceptionHandler;
         //
         // Else if (Flags & UNW_FLAG_CHAININFO)
         //
-        OPTIONAL ULONG FunctionEntry;
+        struct
+        {
+            ULONG FunctionStartAddress;
+            ULONG FunctionEndAddress;
+            ULONG UnwindInfoAddress;
+        } FunctionEntry;
     };
+#if 0
     //
     // If (Flags & UNW_FLAG_EHANDLER)
     //

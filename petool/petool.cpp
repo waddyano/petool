@@ -3,6 +3,7 @@
 #include <distorm.h>
 #include <algorithm>
 #include <functional>
+#include <sstream>
 #include <map>
 #include <mnemonics.h>
 #include <set>
@@ -369,23 +370,27 @@ public:
             RUNTIME_FUNCTION &entry = entries[i];
             if (entry.BeginAddress == 0)
                 break;
-            m_targets.insert(std::make_pair(entry.BeginAddress, TargetInfo(TargetType::FUNCTION, true)));
+            auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
+            if ((ui->Flags & UNW_FLAG_CHAININFO) == 0)
+                m_targets.insert(std::make_pair(entry.BeginAddress, TargetInfo(TargetType::FUNCTION, true)));
         }
     }
 
-    bool m_haveLabels = false;
-
-	void AssignLabels()
-	{
-        m_haveLabels = true;
-		unsigned int lab = 0;
-		for (auto &tpair : m_targets)
-			tpair.second.label = ++lab;
-	}
+    BasicBlock *FindBasicBlock(Rva a)
+    {
+        BasicBlock tmp(a);
+        auto it = m_basicBlocks.find(&tmp);
+        if (it != m_basicBlocks.end())
+        {
+            BasicBlock *bb = *it;
+            return bb;
+        }
+        return nullptr;
+    }
 
     bool m_verbose = false;
 
-	void AdjustRIPOperand(const _CodeInfo &ci, Rva va, const _DInst dinst, BasicBlock *bb)
+	void AdjustRIPOperand(const _CodeInfo &ci, Rva va, _DInst dinst, BasicBlock *bb)
     {
         Rva a = va + dinst.addr;
 
@@ -394,6 +399,7 @@ public:
         int skippedOp = 128;
         bool pcRel = false;
         bool adjustDisp = false;
+        bool setLastInst = false;
 		for (int j = OPERANDS_NO - 1; j >= 0; --j)
 		{
 			if (dinst.ops[j].type == O_NONE)
@@ -422,6 +428,23 @@ public:
                 if ((dinst.ops[j].size & 7) != 0)
                     printf("oh my\n");
                 operandOffset -= dinst.ops[j].size / 8;
+            }
+            else if (dinst.ops[j].type == O_REG && j == 0 && dinst.opcode == I_LEA &&
+                (dinst.ops[1].type == O_MEM  || dinst.ops[1].type == O_SMEM))
+
+            {
+                if ((int64_t)dinst.disp > 0)
+                { 
+                    Rva b = Rva(dinst.disp);
+                    if (AdjustRva(&b))
+                    { 
+                        printf("stashed instruction\n");
+                        Printer(ci, va, dinst);
+                        m_lastInst = dinst;
+                        setLastInst = true;
+                        operandOffset = dinst.size - dinst.dispSize / 8;
+                    }
+                }
             }
             else if (dinst.ops[j].type == O_REG)
             {
@@ -454,14 +477,36 @@ public:
             }
         }
 
+        if (!setLastInst)
+        { 
+            if (m_lastInst.flags != FLAG_NOT_DECODABLE)
+            {
+                if (dinst.opcode == I_ADD && 
+                    dinst.ops[0].type == O_REG && dinst.ops[0].index == m_lastInst.ops[0].index &&
+                    dinst.ops[1].type == O_REG && dinst.ops[1].index == bb->baseReg)
+                {
+                    printf("need to adjust last\n");
+                    adjustDisp = true;
+                    dinst = m_lastInst;
+                    operandOffset = m_lastOperandOffset;
+                }
+            }
+
+            m_lastInst.flags = FLAG_NOT_DECODABLE;
+        }
+        else
+        {
+            m_lastOperandOffset = operandOffset;
+        }
+
+
         if (operandOffset == dinst.size && !adjustDisp)
             return;
 
-        Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
-        Rva oldTargetVa = targetVa;
-
         if (opSize != 4 && !adjustDisp)
         {
+            Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
+            Rva oldTargetVa = targetVa;
             if (AdjustRva(&targetVa))
                 printf("can not handle op off %d/%d size %d at %x - %d\n", operandOffset, dinst.size, opSize, (DWORD)(va.ToUL() + dinst.addr), pcRel);
             return;
@@ -481,8 +526,13 @@ public:
 
             if (m_verbose)
                 Printer(ci, va, tmp);
+            return;
         }
-        else if (AdjustRva(&targetVa))
+
+        Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
+        Rva oldTargetVa = targetVa;
+        
+        if (AdjustRva(&targetVa))
         {
             if (m_verbose)
 			    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
@@ -516,15 +566,12 @@ public:
 			_strlwr(reinterpret_cast<char *>(decoded.operands.p));
 		Rva a = va + decoded.offset;
 
-        if (m_haveLabels)
-        {
-            auto it = m_targets.find(a);
-		    if (it != m_targets.end())
-		    {
-			    printf("%s%u:\n", ToString(it->second.targetType), it->second.label);
-			    it->second.defined = true;
-		    }
-        }
+        BasicBlock *bb = FindBasicBlock(a);
+		if (bb != nullptr)
+		{
+			//printf("%s%u:\n", ToString(it->second.targetType), it->second.label);
+			printf("lab_bb%u:\n", bb->id);
+		}
 
 		auto it2 = m_exportedSymbols.find(a);
 		if (it2 != m_exportedSymbols.end())
@@ -550,12 +597,10 @@ public:
 			}
 			if (target != Rva::Invalid())
 			{
-                if (m_haveLabels)
-                {
-				    auto it = m_targets.find(target);
-				    if (it != m_targets.end())
-					    printf(" %s%u.", ToString(it->second.targetType), it->second.label);
-                }
+				BasicBlock *t = FindBasicBlock(target);
+				if (t != nullptr)
+					//printf(" %s%u.", ToString(it->second.targetType), it->second.label);
+                    printf(" lab_bb%u", t->id);
 
 				auto importIt = m_vaToImportedSymbols.find(target);
 				if (importIt != m_vaToImportedSymbols.end())
@@ -638,9 +683,6 @@ public:
         return -1;
     }
 
-    std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
-    std::map<Rva, TargetInfo> m_targets;
-
     void GatherAllTargets()
     {
         int textSection = FindSection(".text");
@@ -702,11 +744,24 @@ public:
         }
     }
 
+    std::string VecToString(const std::vector<Rva> &rvas)
+    {
+        if (rvas.empty())
+            return std::string();
+
+        std::stringstream result;
+
+        result << std::hex << rvas[0].ToUL();
+
+        for (size_t i = 1; i < rvas.size(); ++i)
+            result << " " << rvas[i].ToUL();
+
+        return result.str();
+    }
+
     void DoDisassemble()
     {
         GatherAllTargets();
-
-		AssignLabels();
 
         int textSection = FindSection(".text");
         if (textSection < 0)
@@ -718,24 +773,60 @@ public:
 		DWORD textSize = m_sectionHeaders[textSection].SizeOfRawData;
 
         auto it = m_basicBlocks.begin();
+        auto jt_it = m_basicBlocks.begin();
+
         while (it != m_basicBlocks.end())
         {
             BasicBlock *bb = *it;
-            printf("-- bb %lx %lx -- %lx %lx -- %s %d-%d --\n", bb->start.ToUL(), bb->length, 
-                bb->nSuccessors > 0 ? bb->successors[0].ToUL() : 0, bb->nSuccessors > 1 ? bb->successors[1].ToUL() : 0, 
-                bb->baseReg == R_NONE ? "" : (char *)GET_REGISTER_NAME(bb->baseReg), bb->baseRegSet, bb->baseRegClobbered);
-			Disassemble(Rva2Ptr<unsigned char>(bb->start), bb->start, bb->length, [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->Printer(ci, va, dinst); });
+            unsigned char *bbPtr = Rva2Ptr<unsigned char>(bb->start);
+            if (bb->isJumpTable)
+            {
+                printf("-- jt %lx %lx - element size %d --\n", bb->start.ToUL(), bb->length, bb->jumpTableElementSize);
+                for (unsigned int i = 0; i < bb->length / bb->jumpTableElementSize; ++i)
+                {
+                    if (bb->jumpTableElementSize == 1)
+                    {
+                        printf(" db %02x\n", 0xff & bbPtr[i]);
+                    }
+                    else if (bb->jumpTableElementSize == 2)
+                    {
+                        printf(" dw %04x\n", 0xffff & ((unsigned short *)bbPtr)[i]);
+                    }
+                    else if (bb->jumpTableElementSize == 4)
+                    {
+                        printf(" dl %lx\n", 0xffff & ((unsigned long *)bbPtr)[i]);
+                    }
+                }
+            }
+            else
+            { 
+                printf("-- bb %lx %lx -- succ '%s' pred '%s' -- %s %d-%d --\n", bb->start.ToUL(), bb->length, 
+                    VecToString(bb->successors).c_str(), VecToString(bb->predecessors).c_str(),
+                    bb->baseReg == R_NONE ? "" : (char *)GET_REGISTER_NAME(bb->baseReg), bb->baseRegSet, bb->baseRegClobbered);
+			    Disassemble(bbPtr, bb->start, bb->length, [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->Printer(ci, va, dinst); });
+            }
             auto nextIt = it;
             ++nextIt;
             if (nextIt != m_basicBlocks.end())
             {
-                Rva pad = bb->start + bb->length;
-                while (pad < (*nextIt)->start)
+                BasicBlock *nextBB = *nextIt;
+                Rva nextStart = nextBB->start;
+
+                Rva padStart = bb->start + bb->length;
+
+                if (nextBB->isJumpTable && nextBB->jumpTableElementSize == 4)
                 {
-                    if (*Rva2Ptr<BYTE>(pad) != 0xcc)
+                    padStart = Rva((bb->start.ToUL() + bb->length + 3) & ~3);
+                }
+
+                Rva pad = padStart;
+                while (pad < nextStart)
+                {
+                    BYTE b = *Rva2Ptr<BYTE>(pad);
+                    if (b != 0xcc)
                     {
+                        printf("%x: not all int 3! %x - %x - next %x\n", (bb->start + bb->length).ToUL(), padStart.ToUL(), pad.ToUL(), nextStart.ToUL());
                         pad = bb->start + bb->length;
-                        printf("%x: not all int 3!\n", pad.ToUL());
                         while (pad < (*nextIt)->start)
                         {
                             printf("%02x", *Rva2Ptr<BYTE>(pad));
@@ -747,12 +838,14 @@ public:
                     pad = pad + 1;
                 }
             }
+
             it = nextIt;
         }
-
+#if 0
 		for (auto &t : m_targets)
 			if (!t.second.defined && t.second.targetType != TargetType::DATA)
 				printf("Target %d %lx %s not defined\n", t.second.label, t.first.ToUL(), ToString(t.second.targetType));
+#endif
     }
 
     struct SECTION
@@ -923,9 +1016,17 @@ public:
             auto s = Rva2Section(entry.UnwindInfoAddress);
             if (s != nullptr)
             {
-                printf("%s\n", s->Name);
                 auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
-                printf("%u %u %s # codes %u\n", ui->Version, ui->Flags, ui->FlagString().c_str(), ui->CountOfCodes);
+                printf("%u %u %s prolog %u # codes %u -- ", ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
+                if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
+                {
+                    printf(" ehandler %lx", ui->ExceptionHandler);
+                }
+                if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
+                {
+                    printf(" function %lx %lx %lx", ui->FunctionEntry.FunctionStartAddress, ui->FunctionEntry.FunctionEndAddress, ui->FunctionEntry.UnwindInfoAddress);
+                }
+                printf("\n");
             }
         }
     }
@@ -967,16 +1068,21 @@ public:
         while (it != m_basicBlocks.end())
         {
             BasicBlock *bb = *it;
-            //printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
-            Disassemble(Rva2Ptr<unsigned char>(bb->start), bb->start, bb->length, [this, bb](const _CodeInfo &ci, Rva va, const _DInst &dinst) 
-            { 
-                this->AdjustRIPOperand(ci, va, dinst, bb); 
-                if (dinst.opcode == I_RET || dinst.opcode == I_JMP)
-                {
-                    return false;
-                }
-                return true;
-            });
+            printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
+            if (!bb->isJumpTable)
+            {
+                m_lastInst.flags = FLAG_NOT_DECODABLE;
+
+                Disassemble(Rva2Ptr<unsigned char>(bb->start), bb->start, bb->length, [this, bb](const _CodeInfo &ci, Rva va, const _DInst &dinst) 
+                { 
+                    this->AdjustRIPOperand(ci, va, dinst, bb); 
+                    if (dinst.opcode == I_RET || dinst.opcode == I_JMP)
+                    {
+                        return false;
+                    }
+                    return true;
+                });
+            }
             ++it;
         }
     }
@@ -1396,6 +1502,9 @@ public:
 	}
 
 	private:
+        std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
+        std::map<Rva, TargetInfo> m_targets;
+
 		unsigned char *m_base;
 		off_t m_originalLength;
 		int m_nSections;
@@ -1403,6 +1512,8 @@ public:
         std::vector<SECTION> m_sections;
 		IMAGE_OPTIONAL_HEADER64 *m_optionalHeader;
 		ULONGLONG m_imageBase;
+        _DInst m_lastInst;
+        int m_lastOperandOffset;
 };
 
 int main(int argc, char *argv[])
