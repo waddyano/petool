@@ -570,7 +570,7 @@ public:
 		if (bb != nullptr)
 		{
 			//printf("%s%u:\n", ToString(it->second.targetType), it->second.label);
-			printf("lab_bb%u:\n", bb->id);
+			printf("%s:\n", bb->GetLabel().c_str());
 		}
 
 		auto it2 = m_exportedSymbols.find(a);
@@ -600,7 +600,7 @@ public:
 				BasicBlock *t = FindBasicBlock(target);
 				if (t != nullptr)
 					//printf(" %s%u.", ToString(it->second.targetType), it->second.label);
-                    printf(" lab_bb%u", t->id);
+                    printf(" %s", t->GetLabel().c_str());
 
 				auto importIt = m_vaToImportedSymbols.find(target);
 				if (importIt != m_vaToImportedSymbols.end())

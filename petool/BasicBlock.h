@@ -1,5 +1,6 @@
 #pragma once
 #include <distorm.h>
+#include <string>
 #include <vector>
 #include "Rva.h"
 
@@ -10,17 +11,28 @@ struct BasicBlock
     BasicBlock(Rva s, unsigned long l) : id(++nextId), start(s), length(l)
     {
     }
+
     BasicBlock(Rva s) : id(0), start(s), length(0)
     {
     }
+
     BasicBlock() : id(0), start(), length(0)
     {
     }
+
     BasicBlock(const BasicBlock &other) : 
         id(++nextId), start(other.start), length(other.length), successors(other.successors), predecessors(other.predecessors), baseReg(other.baseReg), baseRegSet(other.baseRegSet), baseRegClobbered(other.baseRegClobbered),
-        endsInIndirectJump(other.endsInIndirectJump), isJumpTable(other.isJumpTable), jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
+        endsInIndirectJump(other.endsInIndirectJump), isJumpTable(other.isJumpTable), isFunctionStart(other.isFunctionStart), jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
     {
     }
+
+    std::string GetLabel() const
+    {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%s_bb%u", isFunctionStart ? "fn" : "lab", id);
+        return buf;
+    }
+
     unsigned int id;
     Rva start;
     unsigned long length;
@@ -32,6 +44,7 @@ struct BasicBlock
     bool endsInIndirectJump = false;
     bool propagated = false;
     bool isJumpTable = false;
+    bool isFunctionStart = false;
     unsigned long jumpTableSize = 0;
     unsigned long jumpTableElementSize = 0;
     int jumpTableReg = R_NONE;

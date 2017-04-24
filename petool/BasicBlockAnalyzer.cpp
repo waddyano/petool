@@ -51,6 +51,8 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
     SimplePrint(ci, va, dinst);
 	for (int j = 0; j < OPERANDS_NO; ++j)
 	{
+        bool addJumpTable = false;
+        unsigned long sz;
         if (dinst.opcode == I_MOVZX && dinst.ops[j].type == O_MEM && dinst.base == bb->baseReg)
         {
             BasicBlock *prevBB = nullptr;
@@ -58,10 +60,10 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
             auto it = m_basicBlocks.find(&t);
             if (it != m_basicBlocks.end())
             { 
-                int sz = (*it)->jumpTableSize;
+                sz = (*it)->jumpTableSize;
                 printf("disp %lld size %d\n", dinst.disp, sz);
                 unsigned long max_off = 0;
-                for (int i = 0; i < sz; ++i)
+                for (unsigned long i = 0; i < sz; ++i)
                 { 
                     unsigned long off;
                     
@@ -71,19 +73,12 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
                         off = ((unsigned short *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
                     else if (dinst.ops[j].size == 32)
                         off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    //printf("zx off %lx\n", off);
                     if (off > max_off)
                         max_off = off;
                 }
                 printf("max off %lu\n", max_off);
                 jumpTableSize = max_off + 1;
-            
-                auto jt = new BasicBlock();
-                jt->isJumpTable = true;
-                jt->start = Rva(dinst.disp);
-                jt->jumpTableElementSize = dinst.ops[j].size / 8;
-                jt->length = sz * jt->jumpTableElementSize;
-                m_basicBlocks.insert(jt);
+                addJumpTable = true;           
             }
         }
         if (dinst.opcode == I_MOV && dinst.ops[j].type == O_MEM && dinst.ops[j].size == 32 && dinst.base == bb->baseReg)
@@ -93,10 +88,10 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
             auto it = m_basicBlocks.find(&t);
             if (it != m_basicBlocks.end())
             { 
-                unsigned long sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
+                sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
                 printf("disp %lld size %d\n", dinst.disp, sz);
                 std::set<Rva> added;
-                for (unsigned int i = 0; i < sz; ++i)
+                for (unsigned long i = 0; i < sz; ++i)
                 { 
                     unsigned long off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
                     printf("off %lx\n", off);
@@ -108,13 +103,18 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
                     bb->successors.push_back(next);
                 }
 
-                auto jt = new BasicBlock();
-                jt->isJumpTable = true;
-                jt->start = Rva(dinst.disp);
-                jt->jumpTableElementSize = dinst.ops[j].size / 8;
-                jt->length = sz * jt->jumpTableElementSize;
-                m_basicBlocks.insert(jt);
+                addJumpTable = true;
             }
+        }
+
+        if (addJumpTable)
+        { 
+            auto jt = new BasicBlock();
+            jt->isJumpTable = true;
+            jt->start = Rva(dinst.disp);
+            jt->jumpTableElementSize = dinst.ops[j].size / 8;
+            jt->length = sz * jt->jumpTableElementSize;
+            m_basicBlocks.insert(jt);
         }
     }
 
@@ -340,6 +340,13 @@ void BasicBlockAnalyzer::Analyze(std::set<Rva> &&seedRvas)
             if (newbb->baseReg != R_NONE && newbb->baseRegClobbered == 0)
             {
                 newbb->baseRegClobbered = newbb->length;
+            }
+
+            auto targ_it = m_targets.find(newbb->start);
+            if (targ_it != m_targets.end())
+            {
+                if (targ_it->second.targetType == TargetType::CFUNCTION || targ_it->second.targetType == TargetType::FUNCTION)
+                    newbb->isFunctionStart = true;
             }
 
             m_basicBlocks.insert(newbb);

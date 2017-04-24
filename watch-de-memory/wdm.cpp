@@ -36,43 +36,48 @@ static void write_console(const char *fmt, ...)
 
 extern "C" __declspec(dllexport) void * wdm_malloc(size_t sz)
 {
-    write_console("malloc\n");
-    return malloc(sz);
+    void *res = malloc(sz);
+    write_console("malloc %zd => %p\n", sz, res);
+    return res;
 }
 
 extern "C" __declspec(dllexport) void wdm_free(void *p)
 {
-    write_console("free\n");
+    write_console("free %p\n", p);
     free(p);
 }
 
 extern "C" __declspec(dllexport) void *wdm_realloc(void *p, size_t sz)
 {
-    write_console("realloc\n");
-    return realloc(p, sz);
+    void *res = realloc(p, sz);
+    write_console("realloc %p %zd => %p\n", p, sz, res);
+    return res;
 }
 
 extern "C" __declspec(dllexport) LPVOID wdm_HeapAlloc(HANDLE heap, DWORD flags, SIZE_T sz)
 {
-    write_console("HeapAlloc %zd\n", sz);
-    return HeapAlloc(heap, flags, sz);
+    LPVOID res = HeapAlloc(heap, flags, sz);
+    write_console("HeapAlloc %p %zd => res\n", heap, sz, res);
+    return res;
 }
 
 extern "C" __declspec(dllexport) BOOL wdm_HeapFree(HANDLE heap, DWORD flags, LPVOID p)
 {
-    write_console("HeapFree %p\n", p);
+    write_console("HeapFree %p %p\n", heap, p);
     return HeapFree(heap, flags, p);
 }
 
 extern "C" __declspec(dllexport) LPVOID wdm_HeapReAlloc(HANDLE heap, DWORD flags, LPVOID p, SIZE_T sz)
 {
-    write_console("HeapReAlloc %p %zd\n", p, sz);
-    return HeapReAlloc(heap, flags, p, sz);
+    LPVOID res = HeapReAlloc(heap, flags, p, sz);
+    write_console("HeapReAlloc %p %zd => %p\n", p, sz, res);
+    return res;
 }
 
 extern "C" __declspec(dllexport) SIZE_T wdm_HeapSize(HANDLE heap, DWORD flags, LPVOID p)
 {
-    write_console("HeapSize\n");
-    return HeapSize(heap, flags, p);
+    SIZE_T res = HeapSize(heap, flags, p);
+    write_console("HeapSize %p %p => %zd\n", heap, p, res);
+    return res;
 }
 
