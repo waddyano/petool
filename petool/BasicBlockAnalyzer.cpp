@@ -226,7 +226,17 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
                 m_targets.insert(std::make_pair(target, TargetInfo(type)));
 			}
 			else if (it != m_targets.end() && type == TargetType::CFUNCTION && it->second.targetType != TargetType::FUNCTION)
+            { 
 				it->second.targetType = type;
+            }
+
+            if (type == TargetType::CFUNCTION)
+            {
+                BasicBlock tmp(target);
+                auto bb_it = m_basicBlocks.find(&tmp);
+                if (bb_it != m_basicBlocks.end())
+                    (*bb_it)->isFunctionStart = true;
+            }
 
             if (mfc == FC_CND_BRANCH)
             { 

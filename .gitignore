@@ -31,3 +31,7 @@
 /.vs/VisDiff/v14/*.suo
 /*.bak
 /*.exe
+/.vs/p/v14/*.suo
+/p.sln
+/test-dll/test-dll.vcxproj.user
+/edit2.txt
