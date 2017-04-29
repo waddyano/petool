@@ -1,6 +1,9 @@
+#include <excpt.h>
 #include <math.h>
 #include <intrin.h>
 #include <stdio.h>
+#include <string>
+#include <Windows.h>
 
 #define EXPORT __declspec(dllexport)
 
@@ -26,7 +29,7 @@ static char *strings []
     "fourteen"
 };
 
-extern "C" EXPORT void dllfn1()
+extern EXPORT void dllfn1()
 {
     for (int i = 0; i < 10; ++i)
         a[i] = sqrt(double(i));
@@ -34,7 +37,7 @@ extern "C" EXPORT void dllfn1()
     _InterlockedCompareExchange((volatile long *)&flags[50], 0, 1);
 }
 
-extern "C" EXPORT void dllfn2(int i, int j)
+extern EXPORT void dllfn2(int i, int j)
 {
     switch (i)
     {
@@ -76,4 +79,61 @@ extern "C" EXPORT void dllfn2(int i, int j)
     case 108: printf("i %s\n", strings[j-108]); break;
     case 118: printf("i %s\n", strings[j-118]); break;
     }
+}
+
+static void t()
+{
+    throw std::string("boom");
+}
+
+static void vio()
+{
+    __try
+    {
+        int *x = 0;
+        printf("about to blow!\n");
+        *x = 99;
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER)
+    {
+        printf("vio! %d\n", 0x1234);
+    }
+}
+
+static void afn(bool seh)
+{
+    std::string s("local");
+    if (seh)
+        vio();
+    else
+        t();
+}
+
+static void b(bool seh)
+{
+    std::string s("local");
+    try
+    {
+        afn(seh);
+    }
+    catch (const std::string &e)
+    {
+        printf("caught %s\n", e.c_str());
+    }
+}
+
+extern EXPORT int excpt(bool seh)
+{
+    std::string s("mainlocal");
+    b(seh);
+    return 0;
+}
+
+extern EXPORT void crit()
+{
+    CRITICAL_SECTION sect;
+    InitializeCriticalSectionAndSpinCount(&sect, 4000);
+    EnterCriticalSection(&sect);
+    LeaveCriticalSection(&sect);
+    DeleteCriticalSection(&sect);
 }

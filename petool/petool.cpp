@@ -60,7 +60,7 @@ public:
 
 		fseek(fp, 0, SEEK_END);
 		m_originalLength = ftell(fp);
-		printf("length %d x%x\n", (int)m_originalLength, (int)m_originalLength);
+		//printf("length %d x%x\n", (int)m_originalLength, (int)m_originalLength);
 		fseek(fp, 0, SEEK_SET);
 		m_base = static_cast<unsigned char *>(malloc(m_originalLength));
 		if (fread(m_base, 1, m_originalLength, fp) != m_originalLength)
@@ -373,6 +373,10 @@ public:
             auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
             if ((ui->Flags & UNW_FLAG_CHAININFO) == 0)
                 m_targets.insert(std::make_pair(entry.BeginAddress, TargetInfo(TargetType::FUNCTION, true)));
+            if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
+            {
+                m_targets.insert(std::make_pair(ui->GetHandlerInfo().ExceptionHandler, TargetInfo(TargetType::FUNCTION, true)));
+            }
         }
     }
 
@@ -556,6 +560,35 @@ public:
         return m_imageBase + r.ToUL();
     }
 
+    bool LooksLikeString(const char *s)
+    {
+        const char *p = s;
+        while (*p != '\0')
+        {
+            if (!isascii(*p))
+                return false;
+            ++p;
+        }
+
+        return p - s > 4;
+    }
+
+    void PrintString(const char *s)
+    {
+        while (*s != '\0')
+        {
+            if (iscntrl(*s))
+            {
+                if (*s == '\n')
+                    printf("\\n");
+                else
+                    printf("\\x%02x", 0xff & *s);
+            }
+            else
+                printf("%c", *s);
+            ++s;
+        }
+    }
 	bool Printer(const _CodeInfo &ci, Rva va, const _DInst dinst)
 	{
 		_DecodedInst decoded;
@@ -605,6 +638,18 @@ public:
 				auto importIt = m_vaToImportedSymbols.find(target);
 				if (importIt != m_vaToImportedSymbols.end())
 					printf(" %s", importIt->second.c_str());
+
+                auto section = Rva2Section(target);
+                if (section != &dummySection && !IsExecutable(*section) && !IsWritable(*section))
+                {
+                    char *s = Rva2Ptr<char>(target);
+                    if (LooksLikeString(s))
+                    {
+                        printf(" \"");
+                        PrintString(s);
+                        printf("\"");
+                    }
+                }
 			}
 		}
 		printf("\n");
@@ -640,6 +685,15 @@ public:
             ThrowBadFile("can not instrument .EXE stripped of relocations");
 
 		m_optionalHeader = reinterpret_cast<IMAGE_OPTIONAL_HEADER64 *>(fileHeader + 1);
+
+        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA) != 0)
+            printf("High Entropy VA\n");
+
+        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) != 0)
+            printf("Dynamic Base\n");
+
+        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_NX_COMPAT) != 0)
+            printf("NX Compat\n");
 
 		printf("Machine %x\n", fileHeader->Machine);
 		printf("# sections %d\n", fileHeader->NumberOfSections);
@@ -870,6 +924,11 @@ public:
         return (s.Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0;
     }
 
+    static bool IsWritable(const IMAGE_SECTION_HEADER &s)
+    {
+        return (s.Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
+    }
+
     void PrintSections()
     {
         printf("Base: %p => %p\n", m_base, m_base + m_originalLength);
@@ -1020,11 +1079,11 @@ public:
                 printf("%u %u %s prolog %u # codes %u -- ", ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
                 if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
                 {
-                    printf(" ehandler %lx", ui->ExceptionHandler);
+                    printf(" ehandler %lx", ui->GetHandlerInfo().ExceptionHandler);
                 }
                 if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
                 {
-                    printf(" function %lx %lx %lx", ui->FunctionEntry.FunctionStartAddress, ui->FunctionEntry.FunctionEndAddress, ui->FunctionEntry.UnwindInfoAddress);
+                    printf(" function %lx %lx %lx", ui->GetHandlerInfo().FunctionEntry.FunctionStartAddress, ui->GetHandlerInfo().FunctionEntry.FunctionEndAddress, ui->GetHandlerInfo().FunctionEntry.UnwindInfoAddress);
                 }
                 printf("\n");
             }

@@ -11,6 +11,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "watch-de-memory", "watch-de
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test-dll", "test-dll\test-dll.vcxproj", "{B773F018-08AD-4764-8EA6-7CB42FB17195}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Utils", "Utils\Utils.vcxproj", "{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		clib|x64 = clib|x64
@@ -87,6 +89,22 @@ Global
 		{B773F018-08AD-4764-8EA6-7CB42FB17195}.Release|x64.Build.0 = Release|x64
 		{B773F018-08AD-4764-8EA6-7CB42FB17195}.Release|x86.ActiveCfg = Release|Win32
 		{B773F018-08AD-4764-8EA6-7CB42FB17195}.Release|x86.Build.0 = Release|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.clib|x64.ActiveCfg = Release|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.clib|x64.Build.0 = Release|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.clib|x86.ActiveCfg = Release|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.clib|x86.Build.0 = Release|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Debug|x64.ActiveCfg = Debug|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Debug|x64.Build.0 = Debug|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Debug|x86.ActiveCfg = Debug|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Debug|x86.Build.0 = Debug|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.dll|x64.ActiveCfg = Debug|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.dll|x64.Build.0 = Debug|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.dll|x86.ActiveCfg = Debug|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.dll|x86.Build.0 = Debug|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Release|x64.ActiveCfg = Release|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Release|x64.Build.0 = Release|x64
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Release|x86.ActiveCfg = Release|Win32
+		{F1F4ED33-4FBE-41C8-A6E8-EF9EE473CBA5}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

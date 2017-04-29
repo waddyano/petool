@@ -57,7 +57,7 @@ extern "C" __declspec(dllexport) void *wdm_realloc(void *p, size_t sz)
 extern "C" __declspec(dllexport) LPVOID wdm_HeapAlloc(HANDLE heap, DWORD flags, SIZE_T sz)
 {
     LPVOID res = HeapAlloc(heap, flags, sz);
-    write_console("HeapAlloc %p %zd => res\n", heap, sz, res);
+    write_console("HeapAlloc %p %zd => %p\n", heap, sz, res);
     return res;
 }
 

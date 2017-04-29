@@ -41,7 +41,9 @@ typedef struct UNWIND_INFO
             r += " chaininfo";
         return r;
     }
-    union
+
+
+    union HandlerInfo
     {
         //
         // If (Flags & UNW_FLAG_EHANDLER)
@@ -57,6 +59,14 @@ typedef struct UNWIND_INFO
             ULONG UnwindInfoAddress;
         } FunctionEntry;
     };
+
+    const HandlerInfo &GetHandlerInfo() const
+    {
+        unsigned int count = this->CountOfCodes;
+        if ((count & 1) != 0)
+            ++count;
+        return *(const HandlerInfo *)((const char *)this + 4 + count * sizeof(UNWIND_CODE));
+    }
 #if 0
     //
     // If (Flags & UNW_FLAG_EHANDLER)
