@@ -18,5 +18,8 @@
     <ClInclude Include="toml.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Traceback.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

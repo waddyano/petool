@@ -155,6 +155,7 @@
   <ItemGroup>
     <ClInclude Include="BasicBlock.h" />
     <ClInclude Include="BasicBlockAnalyzer.h" />
+    <ClInclude Include="ConfigFile.h" />
     <ClInclude Include="Disassemble.h" />
     <ClInclude Include="Rva.h" />
     <ClInclude Include="Target.h" />

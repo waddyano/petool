@@ -219,7 +219,7 @@ public:
         return i & ~( (T)1 << (sizeof(T) * CHAR_BIT - 1));
     }
 
-	void ProcessThunkData(Rva va, IMAGE_THUNK_DATA *thunkData)
+	void PrintThunkData(Rva va, IMAGE_THUNK_DATA *thunkData)
 	{
         if (thunkData->u1.AddressOfData == 0)
             printf("Empty thunks\n");
@@ -247,10 +247,6 @@ public:
             va += sizeof(*thunkData);
 		}
 	}
-
-	std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
-	std::unordered_map<std::string, Rva> m_importedSymbols;
-	std::unordered_map<Rva, std::string> m_exportedSymbols;
 
 	void GatherImportedSymbols(Rva va, IMAGE_THUNK_DATA *thunkData)
 	{
@@ -391,8 +387,6 @@ public:
         }
         return nullptr;
     }
-
-    bool m_verbose = false;
 
 	void AdjustRIPOperand(const _CodeInfo &ci, Rva va, _DInst dinst, BasicBlock *bb)
     {
@@ -589,6 +583,7 @@ public:
             ++s;
         }
     }
+
 	bool Printer(const _CodeInfo &ci, Rva va, const _DInst dinst)
 	{
 		_DecodedInst decoded;
@@ -955,7 +950,7 @@ public:
 		}
     }
 
-    void DumpResourceDirectory(int level, char *resourceBase, IMAGE_RESOURCE_DIRECTORY *rsrc)
+    void PrintResourceDirectory(int level, char *resourceBase, IMAGE_RESOURCE_DIRECTORY *rsrc)
     {
         printf("Level %d Resource counts id %lx name %lx\n", level, rsrc->NumberOfIdEntries, rsrc->NumberOfNamedEntries);
         IMAGE_RESOURCE_DIRECTORY_ENTRY *entry = (IMAGE_RESOURCE_DIRECTORY_ENTRY *) (rsrc + 1);
@@ -970,7 +965,7 @@ public:
             if (entry->DataIsDirectory)
             {
                 IMAGE_RESOURCE_DIRECTORY *sub = (IMAGE_RESOURCE_DIRECTORY *)(resourceBase + entry->OffsetToDirectory);
-                DumpResourceDirectory(level + 1, resourceBase, sub);
+                PrintResourceDirectory(level + 1, resourceBase, sub);
             }
             else
             {
@@ -999,32 +994,16 @@ public:
 
         if (!disassem || m_verbose)
         {
-		    if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size != 0)
-            {
-                printf("load config %zd\n", sizeof(IMAGE_LOAD_CONFIG_DIRECTORY64));
-                IMAGE_LOAD_CONFIG_DIRECTORY64 *config = Rva2Ptr<IMAGE_LOAD_CONFIG_DIRECTORY64>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress);
-                printf("LockPrefixTable %llx\n", config->LockPrefixTable);
-                printf("EditList %llx\n", config->EditList);
-                printf("SecurityCookie %llx\n", config->SecurityCookie);
-                printf("SEHandlerTable %llx\n", config->SEHandlerTable);
-                printf("GuardCFCheckFunctionPointer %llx\n", config->GuardCFCheckFunctionPointer);
-                printf("GuardCFFunctionTable %llx\n", config->GuardCFFunctionTable);
-            }
+            PrintLoadConfig();
+            PrintTLS();
 
-            if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size != 0)
-            {
-                IMAGE_TLS_DIRECTORY64 *tls = Rva2Ptr<IMAGE_TLS_DIRECTORY64>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
-                printf("Start %llx\n", tls->StartAddressOfRawData);
-                printf("End %llx\n", tls->EndAddressOfRawData);
-                printf("Index %llx\n", tls->AddressOfIndex);
-                printf("Callbacks %llx\n", tls->AddressOfCallBacks);
-            }
             if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size != 0)
             {
                 IMAGE_RESOURCE_DIRECTORY *rsrc = Rva2Ptr<IMAGE_RESOURCE_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
                 if (m_verbose)
-                    DumpResourceDirectory(0, (char *)rsrc, rsrc);
+                    PrintResourceDirectory(0, (char *)rsrc, rsrc);
             }
+
             if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size != 0)
 		    {
                 printf("Imports at %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
@@ -1042,10 +1021,10 @@ public:
 
 				    printf("Original %lx => %lx, %s\n", desc->OriginalFirstThunk, Rva2Offset(desc->OriginalFirstThunk), Rva2Section(desc->OriginalFirstThunk)->Name);
                     if (desc->OriginalFirstThunk != 0)
-				        ProcessThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
+				        PrintThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
 				    printf("IAT %lx => %lx, %s\n", desc->FirstThunk, Rva2Offset(desc->FirstThunk), Rva2Section(desc->FirstThunk)->Name);
                     if (desc->FirstThunk != 0)
-				        ProcessThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
+				        PrintThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
 				    ++desc;
                     off+=sizeof(*desc);
 			    }
@@ -1053,8 +1032,8 @@ public:
                 printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size);
 		    }
 
-		    ProcessIAT();
-		    ProcessRelocations();
+		    PrintIAT();
+		    PrintRelocations();
             PrintFunctionTable();
         }
 	}
@@ -1127,7 +1106,7 @@ public:
         while (it != m_basicBlocks.end())
         {
             BasicBlock *bb = *it;
-            printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
+            //printf("-- bb %lx %lx --\n", bb->start.ToUL(), bb->length);
             if (!bb->isJumpTable)
             {
                 m_lastInst.flags = FLAG_NOT_DECODABLE;
@@ -1152,22 +1131,18 @@ public:
         DWORD vaDelta;
     };
 
-    std::vector<Insertion> insertions;
-
-    std::unordered_map<Rva, Rva> m_replacementVas;
-
     void MoveVa(Rva oldVa, DWORD size, Rva newVa)
     {
         Insertion after;
         after.vaInsert = oldVa + size;
         after.vaDelta = 0;
-        insertions.insert(insertions.begin(), after);
+        m_insertions.insert(m_insertions.begin(), after);
         Insertion move;
         move.vaInsert = oldVa;
         move.vaDelta = newVa - oldVa;
-        insertions.insert(insertions.begin(), move);
+        m_insertions.insert(m_insertions.begin(), move);
 
-        for (auto i : insertions)
+        for (auto i : m_insertions)
             printf("Insertion %x %d\n", i.vaInsert.ToUL(), i.vaDelta);
     }
 
@@ -1179,7 +1154,7 @@ public:
             *rva = it->second;
             return true;
         }
-        for (auto it = insertions.rbegin(); it != insertions.rend(); ++it)
+        for (auto it = m_insertions.rbegin(); it != m_insertions.rend(); ++it)
         {
             if (*rva >= it->vaInsert)
             {
@@ -1263,6 +1238,18 @@ public:
 		}
     }
 
+    void PrintTLS()
+    {
+        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size != 0)
+        {
+            IMAGE_TLS_DIRECTORY64 *tls = Rva2Ptr<IMAGE_TLS_DIRECTORY64>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
+            printf("Start %llx\n", tls->StartAddressOfRawData);
+            printf("End %llx\n", tls->EndAddressOfRawData);
+            printf("Index %llx\n", tls->AddressOfIndex);
+            printf("Callbacks %llx\n", tls->AddressOfCallBacks);
+        }
+    }
+
     void PrintLoadConfig()
     {
 		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size != 0)
@@ -1279,7 +1266,7 @@ public:
         }
     }
 
-    void ExtendRData(DWORD extra)
+    void ExtendRData()
     {
         auto psection = Rva2Section(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
         if (psection == nullptr)
@@ -1298,6 +1285,37 @@ public:
         printf("extending %d %s\n", section, (char *)m_sections[section].m_section.Name);
         SECTION &s = m_sections[section];
 
+        AddImports(s);
+        PrintLoadConfig();
+        PrintTLS();
+
+        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size != 0)
+        {
+            IMAGE_RESOURCE_DIRECTORY *rsrc = Rva2Ptr<IMAGE_RESOURCE_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
+            AdjustResourceDirectory((char *)rsrc, rsrc);
+        }
+
+        AdjustRIPAddresses();
+    }
+
+	void AdjustThunkData(IMAGE_THUNK_DATA *thunkData)
+	{
+		while (thunkData->u1.AddressOfData != 0)
+		{
+            DWORD rva = (DWORD)thunkData->u1.AddressOfData;
+            AdjustRva(&rva);
+            thunkData->u1.AddressOfData = rva;
+
+			IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(thunkData->u1.AddressOfData);
+			printf("  %x %s - %s off %x %016llx\n", iin->Hint, iin->Name, Rva2Section((DWORD)thunkData->u1.AddressOfData)->Name, Rva2Offset((DWORD)thunkData->u1.AddressOfData), m_imageBase + thunkData->u1.AddressOfData);
+			++thunkData;
+		}
+	}
+
+    void AddImports(SECTION &s)
+    {
+        DWORD extra = 8192;
+
         unsigned char *newData = (unsigned char *)calloc(s.m_section.SizeOfRawData + extra, 1);
 
         DWORD oldVaSize = (s.m_section.SizeOfRawData + 4095) & ~4095;
@@ -1306,7 +1324,7 @@ public:
         insert.vaInsert = Rva(s.m_section.VirtualAddress + s.m_section.SizeOfRawData);
         insert.vaDelta = newVaSize - oldVaSize;
         printf("VA Insert %x VA delta %d\n", insert.vaInsert.ToUL(), insert.vaDelta);
-        insertions.push_back(insert);
+        m_insertions.push_back(insert);
         memcpy(newData, s.m_rawData, s.m_section.SizeOfRawData);
         memset(newData + s.m_section.SizeOfRawData, '!', extra);
 
@@ -1314,8 +1332,8 @@ public:
 
         s.m_rawData = newData;
 
-        m_optionalHeader->SizeOfInitializedData += insertions.back().vaDelta;
-        m_optionalHeader->SizeOfImage += insertions.back().vaDelta;
+        m_optionalHeader->SizeOfInitializedData += m_insertions.back().vaDelta;
+        m_optionalHeader->SizeOfImage += m_insertions.back().vaDelta;
 
         OffsetRelocations();
 
@@ -1350,8 +1368,38 @@ public:
             p += strlen(dll);
             if (((uintptr_t)p & 7) != 0)
                 p += 8 - ((uintptr_t)p & 7);
-            const char *symbols[] = { "malloc", "free", "realloc", "HeapAlloc", "HeapFree", "HeapReAlloc", "HeapSize" };
-            const char *replacement_symbols[] = { "wdm_malloc", "wdm_free", "wdm_realloc", "wdm_HeapAlloc", "wdm_HeapFree", "wdm_HeapReAlloc", "wdm_HeapSize" };
+            const char *symbols[] = 
+            { 
+                "calloc", 
+                "malloc", 
+                "free", 
+                "realloc", 
+                "HeapAlloc", 
+                "HeapFree", 
+                "HeapReAlloc", 
+                "HeapSize",
+                "InitializeCriticalSection",
+                "InitializeCriticalSectionAndSpinCount",
+                "EnterCriticalSection",
+                "LeaveCriticalSection",
+                "DeleteCriticalSection"
+            };
+            const char *replacement_symbols[] = 
+            { 
+                "wdm_calloc", 
+                "wdm_malloc", 
+                "wdm_free", 
+                "wdm_realloc", 
+                "wdm_HeapAlloc", 
+                "wdm_HeapFree", 
+                "wdm_HeapReAlloc", 
+                "wdm_HeapSize",
+                "wdm_InitializeCriticalSection",
+                "wdm_InitializeCriticalSectionAndSpinCount",
+                "wdm_EnterCriticalSection",
+                "wdm_LeaveCriticalSection",
+                "wdm_DeleteCriticalSection"
+            };
             unsigned int nSymbols = sizeof(symbols) / sizeof(symbols[0]);
             p = AddIINs(p, added, nSymbols, replacement_symbols);
 
@@ -1367,7 +1415,7 @@ public:
             m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size += (nSymbols + 1) * sizeof(IMAGE_THUNK_DATA);
             p +=  m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
 
-            if (Ptr2Rva(p) >= insertions.back().vaInsert + insertions.back().vaDelta)
+            if (Ptr2Rva(p) >= m_insertions.back().vaInsert + m_insertions.back().vaDelta)
                 throw "OVERFLOW of insertion";
 
             IMAGE_THUNK_DATA *f = newIat + (oldSize / sizeof(IMAGE_THUNK_DATA));
@@ -1392,72 +1440,14 @@ public:
             MoveVa(Rva(oldVa), oldSize, Ptr2Rva(newIat));
             printf("added %x import orig %x ft %x\n", Ptr2Rva(added).ToUL(), added->OriginalFirstThunk, added->FirstThunk);
         }
-
-        PrintLoadConfig();
-
-        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size != 0)
-        {
-            IMAGE_TLS_DIRECTORY64 *tls = Rva2Ptr<IMAGE_TLS_DIRECTORY64>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
-            printf("Start %llx\n", tls->StartAddressOfRawData);
-            printf("End %llx\n", tls->EndAddressOfRawData);
-            printf("Index %llx\n", tls->AddressOfIndex);
-            printf("Callbacks %llx\n", tls->AddressOfCallBacks);
-        }
-
-        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size != 0)
-        {
-            IMAGE_RESOURCE_DIRECTORY *rsrc = Rva2Ptr<IMAGE_RESOURCE_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
-            AdjustResourceDirectory((char *)rsrc, rsrc);
-        }
-
-        AdjustRIPAddresses();
     }
-
-	void AdjustThunkData(IMAGE_THUNK_DATA *thunkData)
-	{
-		while (thunkData->u1.AddressOfData != 0)
-		{
-            DWORD rva = (DWORD)thunkData->u1.AddressOfData;
-            AdjustRva(&rva);
-            thunkData->u1.AddressOfData = rva;
-
-			IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(thunkData->u1.AddressOfData);
-			printf("  %x %s - %s off %x %016llx\n", iin->Hint, iin->Name, Rva2Section((DWORD)thunkData->u1.AddressOfData)->Name, Rva2Offset((DWORD)thunkData->u1.AddressOfData), m_imageBase + thunkData->u1.AddressOfData);
-			++thunkData;
-		}
-	}
 
     void Edit()
     {
-        IMAGE_DATA_DIRECTORY oldImportDir = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-        IMAGE_DATA_DIRECTORY oldIatDir = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT];
-
-        ExtendRData(8192);
-
-		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size != 0)
-		{
-			IMAGE_IMPORT_DESCRIPTOR *descs = Rva2Ptr<IMAGE_IMPORT_DESCRIPTOR>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-
-			IMAGE_IMPORT_DESCRIPTOR *desc = descs;
-			while (desc->Name != 0)
-			{
-				char *name = Rva2Ptr<char>(desc->Name);
-
-				printf("Name %s, %s\n", name, Rva2Section(desc->Name)->Name);
-
-#if 0
-                if (strcmp(name, "api-ms-win-crt-heap-l1-1-0.dll") == 0)
-                {
-                    printf("edit DLL name\n");
-                    strcpy(name, "api-ix-win-crt-heap-l1-1-0.dll");
-                }
-#endif
-				++desc;
-			}
-		}
+        ExtendRData();
     }
 
-	void ProcessIAT()
+	void PrintIAT()
 	{
         DWORD size = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
 		if (size != 0)
@@ -1481,7 +1471,7 @@ public:
 		}
 	}
 
-	void ProcessRelocations()
+	void PrintRelocations()
 	{
 		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size != 0)
 		{
@@ -1560,19 +1550,30 @@ public:
 		}
 	}
 
-	private:
-        std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
-        std::map<Rva, TargetInfo> m_targets;
+    void SetVerbose(bool v)
+    {
+        m_verbose = v;
+    }
 
-		unsigned char *m_base;
-		off_t m_originalLength;
-		int m_nSections;
-		IMAGE_SECTION_HEADER *m_sectionHeaders;
-        std::vector<SECTION> m_sections;
-		IMAGE_OPTIONAL_HEADER64 *m_optionalHeader;
-		ULONGLONG m_imageBase;
-        _DInst m_lastInst;
-        int m_lastOperandOffset;
+private:
+    std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
+    std::map<Rva, TargetInfo> m_targets;
+
+	unsigned char *m_base;
+	off_t m_originalLength;
+	int m_nSections;
+	IMAGE_SECTION_HEADER *m_sectionHeaders;
+    std::vector<SECTION> m_sections;
+	IMAGE_OPTIONAL_HEADER64 *m_optionalHeader;
+	ULONGLONG m_imageBase;
+    _DInst m_lastInst;
+    int m_lastOperandOffset;
+    std::vector<Insertion> m_insertions;
+    std::unordered_map<Rva, Rva> m_replacementVas;
+	std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
+	std::unordered_map<std::string, Rva> m_importedSymbols;
+	std::unordered_map<Rva, std::string> m_exportedSymbols;
+    bool m_verbose = false;
 };
 
 int main(int argc, char *argv[])
@@ -1630,7 +1631,7 @@ int main(int argc, char *argv[])
         { 
             PEFile file(filename);
 
-            file.m_verbose = verbose;
+            file.SetVerbose(verbose);
 
             if (edit)
             {
