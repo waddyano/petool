@@ -116,13 +116,13 @@ extern "C" __declspec(dllexport) BOOL wdm_InitializeCriticalSectionAndSpinCount(
 
 extern "C" __declspec(dllexport) void wdm_EnterCriticalSection(CRITICAL_SECTION *section)
 {
-    write_console("EnterCriticalSection %p\n", section);
+    //write_console("EnterCriticalSection %p\n", section);
     EnterCriticalSection(section);
 }
 
 extern "C" __declspec(dllexport) void wdm_LeaveCriticalSection(CRITICAL_SECTION *section)
 {
-    write_console("LeaveCriticalSection %p\n", section);
+    //write_console("LeaveCriticalSection %p\n", section);
     LeaveCriticalSection(section);
 }
 

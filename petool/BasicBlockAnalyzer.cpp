@@ -128,7 +128,10 @@ bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const
     	Rva a = va + dinst.addr;
 
         printf("Lifetime Clobber! %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
-        m_newBlock.baseRegClobbered = a - m_newBlock.start;
+        if (a == m_newBlock.start)
+            m_newBlock.baseReg = R_NONE;
+        else
+            m_newBlock.baseRegClobbered = a - m_newBlock.start;
         return false;
     }
     return true;
@@ -174,7 +177,10 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
     if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == m_newBlock.baseReg && m_newBlock.baseRegClobbered == 0)
     { 
         printf("Clobber! %lx - %d at %lx\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet, a.ToUL());
-        m_newBlock.baseRegClobbered = a - m_newBlock.start;
+        if (a == m_newBlock.start)
+            m_newBlock.baseReg = R_NONE;
+        else
+            m_newBlock.baseRegClobbered = a - m_newBlock.start;
     }
 
     m_newBlock.length += dinst.size;

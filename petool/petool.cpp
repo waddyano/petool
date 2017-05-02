@@ -368,10 +368,10 @@ public:
                 break;
             auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
             if ((ui->Flags & UNW_FLAG_CHAININFO) == 0)
-                m_targets.insert(std::make_pair(entry.BeginAddress, TargetInfo(TargetType::FUNCTION, true)));
+                m_targets.insert(std::make_pair(Rva(entry.BeginAddress), TargetInfo(TargetType::FUNCTION, true)));
             if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
             {
-                m_targets.insert(std::make_pair(ui->GetHandlerInfo().ExceptionHandler, TargetInfo(TargetType::FUNCTION, true)));
+                m_targets.insert(std::make_pair(Rva(ui->GetHandlerInfo().ExceptionHandler), TargetInfo(TargetType::FUNCTION, true)));
             }
         }
     }
@@ -447,7 +447,7 @@ public:
             else if (dinst.ops[j].type == O_REG)
             {
             }
-            else if ((dinst.ops[j].type == O_MEM && dinst.base != R_NONE && dinst.base == bb->baseReg) ||
+            else if ((dinst.ops[j].type == O_MEM && ((dinst.base != R_NONE && dinst.base == bb->baseReg) || (dinst.ops[j].index != R_NONE && dinst.ops[j].index == bb->baseReg))) ||
                      (dinst.ops[j].type == O_SMEM && dinst.ops[j].index == bb->baseReg))
             {
                 unsigned long off = a - bb->start;
@@ -754,7 +754,7 @@ public:
 
         if (m_optionalHeader->AddressOfEntryPoint != 0)
         {
-            m_targets.insert(std::make_pair(m_optionalHeader->AddressOfEntryPoint, TargetInfo(TargetType::ENTRY)));
+            m_targets.insert(std::make_pair(Rva(m_optionalHeader->AddressOfEntryPoint), TargetInfo(TargetType::ENTRY)));
         }
 
         GatherFunctionTable();
