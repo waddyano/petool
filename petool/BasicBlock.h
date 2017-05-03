@@ -22,7 +22,7 @@ struct BasicBlock
 
     BasicBlock(const BasicBlock &other) : 
         id(++nextId), start(other.start), length(other.length), successors(other.successors), predecessors(other.predecessors), baseReg(other.baseReg), baseRegSet(other.baseRegSet), baseRegClobbered(other.baseRegClobbered),
-        endsInIndirectJump(other.endsInIndirectJump), isJumpTable(other.isJumpTable), isFunctionStart(other.isFunctionStart), jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
+        endsInIndirectJump(other.endsInIndirectJump), propagated(other.propagated), isJumpTable(other.isJumpTable), isFunctionStart(other.isFunctionStart), jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
     {
     }
 
