@@ -444,21 +444,19 @@ void BasicBlockAnalyzer::PropagateBaseReg()
             {
                 BasicBlock tmp(successor);
                 auto nextIt = m_basicBlocks.find(&tmp);
-                if  (nextIt != m_basicBlocks.end())
+                if
+ (nextIt != m_basicBlocks.end())
                 { 
                     BasicBlock *nextBB = *nextIt;
 
                     if (nextBB->propagated)
-                    { 
-                        printf("Already propagated to %lx\n", nextBB->start.ToUL());
-                    }
-                    else if (nextBB->baseReg == R_NONE)
                     { 
                         printf("Propagate to %lx\n", nextBB->start.ToUL());
                         toBeProcessed.insert(nextBB);
                         nextBB->baseReg = bb->baseReg;
                         nextBB->baseRegSet = 0;
                         Disassemble(m_text + (nextBB->start - m_textVa), nextBB->start, nextBB->length, 
+                            [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(ci, va, dinst); });
                             [this, nextBB](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(nextBB, ci, va, dinst); });
                         if (nextBB->baseRegClobbered == 0)
                             nextBB->baseRegClobbered = nextBB->length;
