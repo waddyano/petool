@@ -121,17 +121,17 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
     return true;
 }
 
-bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst)
+bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
 {
-    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == m_newBlock.baseReg)
+    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == bb->baseReg)
     { 
     	Rva a = va + dinst.addr;
 
-        printf("Lifetime Clobber! %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
-        if (a == m_newBlock.start)
-            m_newBlock.baseReg = R_NONE;
+        printf("Lifetime Clobber! %lx - %d\n", bb->start.ToUL(), bb->baseRegSet);
+        if (a == bb->start)
+            bb->baseReg = R_NONE;
         else
-            m_newBlock.baseRegClobbered = a - m_newBlock.start;
+            bb->baseRegClobbered = a - bb->start;
         return false;
     }
     return true;
@@ -145,11 +145,11 @@ void BasicBlockAnalyzer::CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va
     { 
         if (dinst.opcode == I_CMP && dinst.ops[0].type == O_REG && dinst.ops[1].type == O_IMM)
         {
+            m_newBlock.jumpTableReg = dinst.ops[0].index;
             if (dinst.ops[1].size == 8)
                 m_newBlock.jumpTableSize = dinst.imm.byte;
             else if (dinst.ops[1].size == 32)
                 m_newBlock.jumpTableSize = dinst.imm.dword;
-            m_newBlock.jumpTableReg = dinst.ops[0].index;
             printf("%lx: reg size %d op size %d - compare against %d\n", a.ToUL(), dinst.ops[0].size, dinst.ops[1].size, m_newBlock.jumpTableSize);
             m_jumpTableState = 0;
         }
@@ -178,9 +178,13 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
     { 
         printf("Clobber! %lx - %d at %lx\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet, a.ToUL());
         if (a == m_newBlock.start)
+        {
             m_newBlock.baseReg = R_NONE;
+        }
         else
+        { 
             m_newBlock.baseRegClobbered = a - m_newBlock.start;
+        }
     }
 
     m_newBlock.length += dinst.size;
@@ -254,7 +258,7 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
     CheckForJumpTableLimitCheck(ci, va, dinst);
 
     Rva fallThruTarget = va + dinst.addr + dinst.size;
-    if (mfc != FC_NONE && mfc != FC_UNC_BRANCH && mfc != FC_RET && mfc != FC_CALL)
+    if (mfc != FC_NONE && mfc != FC_UNC_BRANCH && mfc != FC_RET && mfc != FC_CALL && mfc != FC_INT)
     {
         m_targets.insert(std::make_pair(fallThruTarget, TargetInfo(TargetType::LABEL)));
         m_newTargets.insert(fallThruTarget);
@@ -430,8 +434,6 @@ void BasicBlockAnalyzer::PropagateBaseReg()
         //printf("Start from %lx\n", bb->start.ToUL());
         toBeProcessed.erase(bbIt);
 
-        bb->propagated = true;
-
         if (bb->baseRegClobbered < bb->length)
         { 
             //printf("clobbered....\n");
@@ -440,19 +442,24 @@ void BasicBlockAnalyzer::PropagateBaseReg()
         { 
             for (auto successor : bb->successors)
             {
-                //printf("Propagate to %lx\n", bb->successors[i].ToUL());
                 BasicBlock tmp(successor);
                 auto nextIt = m_basicBlocks.find(&tmp);
-                if (nextIt != m_basicBlocks.end())
+                if  (nextIt != m_basicBlocks.end())
                 { 
                     BasicBlock *nextBB = *nextIt;
-                    if (nextBB->baseReg == R_NONE)
+
+                    if (nextBB->propagated)
                     { 
+                        printf("Already propagated to %lx\n", nextBB->start.ToUL());
+                    }
+                    else if (nextBB->baseReg == R_NONE)
+                    { 
+                        printf("Propagate to %lx\n", nextBB->start.ToUL());
                         toBeProcessed.insert(nextBB);
                         nextBB->baseReg = bb->baseReg;
                         nextBB->baseRegSet = 0;
                         Disassemble(m_text + (nextBB->start - m_textVa), nextBB->start, nextBB->length, 
-                            [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(ci, va, dinst); });
+                            [this, nextBB](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(nextBB, ci, va, dinst); });
                         if (nextBB->baseRegClobbered == 0)
                             nextBB->baseRegClobbered = nextBB->length;
                     }
@@ -465,6 +472,8 @@ void BasicBlockAnalyzer::PropagateBaseReg()
                     printf("successor not found!\n");
             }
         }
+
+        bb->propagated = true;
 
         if (bb->endsInIndirectJump && bb->predecessors.size() > 0)
         {

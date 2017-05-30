@@ -456,7 +456,7 @@ public:
                     Rva b = Rva(dinst.disp);
                     if (m_verbose)
                     {
-                        printf("using base! %llu\n", dinst.disp);
+                        printf("using base! %llx\n", dinst.disp);
                         Printer(ci, va, dinst);
                     }
                     if (AdjustRva(&b))
@@ -527,24 +527,27 @@ public:
             return;
         }
 
-        Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
-        Rva oldTargetVa = targetVa;
-        
-        if (AdjustRva(&targetVa))
+        if ((dinst.flags & FLAG_RIP_RELATIVE) != 0 || pcRel)
         {
-            if (m_verbose)
-			    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
-            int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
-            DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
-            if (dispLoc == nullptr)
-                printf("Current disp null new disp %x\n", newDisp);
-            else
+            Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
+            Rva oldTargetVa = targetVa;
+
+            if (AdjustRva(&targetVa))
             {
-                memcpy(dispLoc, &newDisp, 4);
-                _DInst tmp(dinst);
-                tmp.disp = newDisp;
                 if (m_verbose)
-                    Printer(ci, va, tmp);
+                    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
+                int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
+                DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
+                if (dispLoc == nullptr)
+                    printf("Current disp null new disp %x\n", newDisp);
+                else
+                {
+                    memcpy(dispLoc, &newDisp, 4);
+                    _DInst tmp(dinst);
+                    tmp.disp = newDisp;
+                    if (m_verbose)
+                        Printer(ci, va, tmp);
+                }
             }
         }
     }
@@ -1529,17 +1532,18 @@ public:
                     {
                         uint64_t &addr = *Rva2Ptr<uint64_t>(reloc->VirtualAddress + relOffset);
 
+                        printf("check addr %llx: %llx\n", m_imageBase + reloc->VirtualAddress + relOffset, addr);
                         Rva rva(addr - m_imageBase);
                         if (AdjustRva(&rva))
                         { 
                             addr = rva.ToUL() + m_imageBase;
-                            //printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
+                            printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
                         }
                     }
                     else
                         printf("bad reltype %d\n", relType);
                 }
-
+                
                 if (AdjustRva(&reloc->VirtualAddress))
                 {
 				    printf("Offset Reloc size %x va %x\n", reloc->SizeOfBlock, reloc->VirtualAddress);
