@@ -121,9 +121,16 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
     return true;
 }
 
-bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
+static int clobberedReg(int reg)
 {
-    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == bb->baseReg)
+    if (reg >= R_EAX && reg <= R_R15D)
+        return reg - R_EAX + R_RAX;
+    return reg;
+}
+
+bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst)
+{
+    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && clobberedReg(dinst.ops[0].index) == m_newBlock.baseReg)
     { 
     	Rva a = va + dinst.addr;
 
@@ -134,6 +141,7 @@ bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &c
             bb->baseRegClobbered = a - bb->start;
         return false;
     }
+
     return true;
 }
 
@@ -231,7 +239,7 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
                     m_newBlock.baseReg = dinst.ops[0].index;
                     m_newBlock.baseRegSet = a - m_newBlock.start;
                     m_newBlock.baseRegClobbered = 0;
-                    printf("LEA %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
+                    printf("LEA @%lx %lx - %d - reg %s\n", a.ToUL(), m_newBlock.start.ToUL(), m_newBlock.baseRegSet, GET_REGISTER_NAME(m_newBlock.baseReg));
                 }
             }
 
@@ -331,6 +339,7 @@ static int getBaseReg(const std::vector<BasicBlock *> &bbs)
 
     return result;
 }
+
 void BasicBlockAnalyzer::Analyze(std::set<Rva> &&seedRvas)
 {
     for (auto rva : seedRvas)
