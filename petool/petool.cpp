@@ -17,6 +17,7 @@
 #include "BasicBlock.h"
 #include "BasicBlockAnalyzer.h"
 #include "Disassemble.h"
+#include "RTTI.h"
 #include "Rva.h"
 #include "Target.h"
 #include "Unwind.h"
@@ -335,6 +336,7 @@ public:
                         continue;
                     if (relType == IMAGE_REL_BASED_DIR64)
                     {
+                        m_relocations.insert(Rva(reloc->VirtualAddress + relOffset));
                         ULONGLONG va = *Rva2Ptr<ULONGLONG>(reloc->VirtualAddress + relOffset);
                         auto rva = Rva((unsigned long)(va - m_imageBase));
                         auto s = Rva2Section(rva);
@@ -456,7 +458,7 @@ public:
                     Rva b = Rva(dinst.disp);
                     if (m_verbose)
                     {
-                        printf("using base! %llu\n", dinst.disp);
+                        printf("using base! %llx\n", dinst.disp);
                         Printer(ci, va, dinst);
                     }
                     if (AdjustRva(&b))
@@ -527,24 +529,27 @@ public:
             return;
         }
 
-        Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
-        Rva oldTargetVa = targetVa;
-        
-        if (AdjustRva(&targetVa))
+        if ((dinst.flags & FLAG_RIP_RELATIVE) != 0 || pcRel)
         {
-            if (m_verbose)
-			    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
-            int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
-            DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
-            if (dispLoc == nullptr)
-                printf("Current disp null new disp %x\n", newDisp);
-            else
+            Rva targetVa = va + (pcRel ? INSTRUCTION_GET_TARGET(&dinst) : INSTRUCTION_GET_RIP_TARGET(&dinst));
+            Rva oldTargetVa = targetVa;
+
+            if (AdjustRva(&targetVa))
             {
-                memcpy(dispLoc, &newDisp, 4);
-                _DInst tmp(dinst);
-                tmp.disp = newDisp;
                 if (m_verbose)
-                    Printer(ci, va, tmp);
+                    printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
+                int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
+                DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
+                if (dispLoc == nullptr)
+                    printf("Current disp null new disp %x\n", newDisp);
+                else
+                {
+                    memcpy(dispLoc, &newDisp, 4);
+                    _DInst tmp(dinst);
+                    tmp.disp = newDisp;
+                    if (m_verbose)
+                        Printer(ci, va, tmp);
+                }
             }
         }
     }
@@ -600,10 +605,6 @@ public:
 			//printf("%s%u:\n", ToString(it->second.targetType), it->second.label);
 			printf("%s:\n", bb->GetLabel().c_str());
 		}
-
-		auto it2 = m_exportedSymbols.find(a);
-		if (it2 != m_exportedSymbols.end())
-			printf("%s:\n", it2->second.c_str());
 
 		printf("%0*I64x %-24s %s%s%s", 16, ToVa(a),
 			(char*)decoded.instructionHex.p, (char*)decoded.mnemonic.p,
@@ -774,7 +775,7 @@ public:
                 seedRvas.insert(e.first); 
             }
 
-            BasicBlockAnalyzer analyzer(Rva2Ptr<unsigned char>(textVa), textVa, textSize);
+            BasicBlockAnalyzer analyzer(Rva2Ptr<unsigned char>(textVa), textVa, textSize, m_relocations);
             analyzer.Analyze(std::move(seedRvas));
             m_basicBlocks = analyzer.GetBasicBlocks();
             for (auto p : analyzer.GetTargets())
@@ -788,6 +789,44 @@ public:
                 else
                 {
                     m_targets.insert(p);
+                }
+            }
+
+            for (auto vt : analyzer.GetPossibleVtables())
+            {
+                auto loc1 = Rva2Ptr<uint64_t >(vt - 8);
+                printf("check vt %lx\n", vt.ToUL());
+                auto loc2 = Rva2Ptr<uint64_t >(vt);
+                auto s1 = Rva2Section((unsigned long)(*loc1 - m_imageBase));
+                auto s2 = Rva2Section((unsigned long)(*loc2 - m_imageBase));
+                if (!IsExecutable(*s1) && IsExecutable(*s2))
+                {
+                    unsigned long locatorOffset = (unsigned long)(*loc1 - m_imageBase);
+                    auto locator = Rva2Ptr<RTTIObjectLocator>(locatorOffset);
+                    if (locatorOffset == locator->selfOffset)
+                    {
+                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, typeDescriptorOffset)));
+                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, classHierarchyDescriptorOffset)));
+                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, selfOffset)));
+                        printf("locator tdo %lx - offsets %lx %lx\n", locator->typeDescriptorOffset, locatorOffset, locator->selfOffset);
+                        auto descriptor = Rva2Ptr<RTTITypeDescriptor>(locator->typeDescriptorOffset);
+                        printf("desc name %s\n", descriptor->name);
+                        auto base = Rva2Ptr<RTTIClassHierarchyDescriptor>(locator->classHierarchyDescriptorOffset);
+                        auto bases = Rva2Ptr<unsigned int>(base->baseClassArrayOffset);
+                        m_dataToAdjust.insert(Rva(locator->classHierarchyDescriptorOffset + offsetof(RTTIClassHierarchyDescriptor, baseClassArrayOffset)));
+                        for (unsigned int i = 0; i < base->arrayLength; ++i)
+                        {
+                            printf("  base: %lx ", bases[i]);
+                            auto x = Rva2Ptr<RTTIBaseClassDescriptor>(bases[i]);
+                            m_dataToAdjust.insert(Rva(base->baseClassArrayOffset + i * sizeof(unsigned int)));
+                            printf("chd %lx ", x->classHierarchyDescriptorOffset);
+                            printf("tdo %lx\n", x->typeDescriptorOffset);
+                            m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, classHierarchyDescriptorOffset)));
+                            m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, typeDescriptorOffset)));
+                            auto baseDescriptor = Rva2Ptr<RTTITypeDescriptor>(x->typeDescriptorOffset);
+                            printf("  base name %s\n", baseDescriptor->name);
+                        }
+                    }
                 }
             }
         }
@@ -808,9 +847,27 @@ public:
         return result.str();
     }
 
+    bool CheckForJumpToImport(const _CodeInfo &ci, Rva va, const _DInst dinst, BasicBlock *b)
+    {
+        if (dinst.opcode == I_JMP && (dinst.flags & FLAG_RIP_RELATIVE) != 0 && dinst.ops[0].type == O_SMEM)
+        {
+			Rva target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
+            auto it = m_vaToImportedSymbols.find(target);
+            if (it != m_vaToImportedSymbols.end())
+            {
+                b->label = it->second + "*";
+            }
+        }
+
+        return false;
+    }
+
     void DoDisassemble()
     {
         GatherAllTargets();
+
+        for (auto v : m_dataToAdjust)
+            printf("need to adjust %lx: %lx\n", v.ToUL(), *Rva2Ptr<unsigned int>(v));
 
         int textSection = FindSection(".text");
         if (textSection < 0)
@@ -818,6 +875,18 @@ public:
             printf("no text section\n");
             return;
         }
+
+        for (BasicBlock *b : m_basicBlocks)
+        {
+            if (!b->isJumpTable)
+            {
+			    Disassemble(Rva2Ptr<unsigned char>(b->start), b->start, b->length, [this, b](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckForJumpToImport(ci, va, dinst, b); });
+		        auto it = m_exportedSymbols.find(b->start);
+		        if (it != m_exportedSymbols.end())
+                    b->label = it->second;
+            }
+        }
+
 		DWORD textVa = m_sectionHeaders[textSection].VirtualAddress;
 		DWORD textSize = m_sectionHeaders[textSection].SizeOfRawData;
 
@@ -1158,6 +1227,9 @@ public:
         {
             if (*rva >= it->vaInsert)
             {
+                if (it->vaDelta == 0)
+                    return false;
+
                 *rva += it->vaDelta;
                 return true;
             }
@@ -1296,6 +1368,18 @@ public:
         }
 
         AdjustRIPAddresses();
+
+        for (auto v : m_dataToAdjust)
+        {
+            Rva t = v;
+            AdjustRva(&t);
+            Rva tt = Rva(*Rva2Ptr<unsigned long>(t));
+            if (AdjustRva(&tt))
+            {
+                printf("adjusting %lx to %lx: %lx tp %lx\n", v.ToUL(), t.ToUL(), *Rva2Ptr<unsigned long>(t), tt.ToUL());
+                *Rva2Ptr<unsigned long>(t) = tt.ToUL();
+            }
+        }
     }
 
 	void AdjustThunkData(IMAGE_THUNK_DATA *thunkData)
@@ -1530,10 +1614,11 @@ public:
                         uint64_t &addr = *Rva2Ptr<uint64_t>(reloc->VirtualAddress + relOffset);
 
                         Rva rva(addr - m_imageBase);
+                        printf("inspect address %llx\n", addr);
                         if (AdjustRva(&rva))
                         { 
                             addr = rva.ToUL() + m_imageBase;
-                            //printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
+                            printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
                         }
                     }
                     else
@@ -1558,6 +1643,8 @@ public:
 private:
     std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
     std::map<Rva, TargetInfo> m_targets;
+    std::set<Rva> m_relocations;
+    std::set<Rva> m_dataToAdjust;
 
 	unsigned char *m_base;
 	off_t m_originalLength;
