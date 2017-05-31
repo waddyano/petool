@@ -157,6 +157,7 @@
     <ClInclude Include="BasicBlockAnalyzer.h" />
     <ClInclude Include="ConfigFile.h" />
     <ClInclude Include="Disassemble.h" />
+    <ClInclude Include="RTTI.h" />
     <ClInclude Include="Rva.h" />
     <ClInclude Include="Target.h" />
     <ClInclude Include="Unwind.h" />

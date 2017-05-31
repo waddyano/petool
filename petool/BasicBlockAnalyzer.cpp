@@ -121,19 +121,27 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
     return true;
 }
 
-bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
+static int clobberedReg(int reg)
 {
-    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == bb->baseReg)
+    if (reg >= R_EAX && reg <= R_R15D)
+        return reg - R_EAX + R_RAX;
+    return reg;
+}
+
+bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst)
+{
+    if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && clobberedReg(dinst.ops[0].index) == m_newBlock.baseReg)
     { 
     	Rva a = va + dinst.addr;
 
-        printf("Lifetime Clobber! %lx - %d\n", bb->start.ToUL(), bb->baseRegSet);
-        if (a == bb->start)
-            bb->baseReg = R_NONE;
+        printf("Lifetime Clobber! %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
+        if (a == m_newBlock.start)
+            m_newBlock.baseReg = R_NONE;
         else
-            bb->baseRegClobbered = a - bb->start;
+            m_newBlock.baseRegClobbered = a - m_newBlock.start;
         return false;
     }
+
     return true;
 }
 
@@ -191,6 +199,15 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
 
     unsigned int mfc = META_GET_FC(dinst.meta);
 
+    if (dinst.opcode == I_LEA && (dinst.flags & FLAG_RIP_RELATIVE) != 0 && dinst.ops[1].type == O_SMEM)
+    {
+		Rva ea = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
+        if (m_interestingAddresses.count(ea) > 0 && m_interestingAddresses.count(ea - 8) > 0)
+        { 
+            m_possibleVTables.insert(ea);
+        }
+    }
+
 	for (int j = 0; j < OPERANDS_NO; ++j)
 	{
 		if (dinst.ops[j].type == O_NONE)
@@ -207,6 +224,7 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
                 //printf("Backward loop! %lx start %lx - split at %ld\n", target.ToUL(), m_newBlock.start.ToUL(), m_splitAt);
             }
 		}
+
 		if (dinst.ops[j].type == O_SMEM && (dinst.flags & FLAG_RIP_RELATIVE) != 0)
 		{
 			target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
@@ -221,7 +239,7 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
                     m_newBlock.baseReg = dinst.ops[0].index;
                     m_newBlock.baseRegSet = a - m_newBlock.start;
                     m_newBlock.baseRegClobbered = 0;
-                    printf("LEA %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
+                    printf("LEA @%lx %lx - %d - reg %s\n", a.ToUL(), m_newBlock.start.ToUL(), m_newBlock.baseRegSet, GET_REGISTER_NAME(m_newBlock.baseReg));
                 }
             }
 
@@ -321,6 +339,7 @@ static int getBaseReg(const std::vector<BasicBlock *> &bbs)
 
     return result;
 }
+
 void BasicBlockAnalyzer::Analyze(std::set<Rva> &&seedRvas)
 {
     for (auto rva : seedRvas)
@@ -444,20 +463,22 @@ void BasicBlockAnalyzer::PropagateBaseReg()
             {
                 BasicBlock tmp(successor);
                 auto nextIt = m_basicBlocks.find(&tmp);
-                if
- (nextIt != m_basicBlocks.end())
+                if  (nextIt != m_basicBlocks.end())
                 { 
                     BasicBlock *nextBB = *nextIt;
 
                     if (nextBB->propagated)
                     { 
-                        printf("Propagate to %lx\n", nextBB->start.ToUL());
+                        //printf("Already propagated to %lx\n", nextBB->start.ToUL());
+                    }
+                    else if (nextBB->baseReg == R_NONE)
+                    { 
+                        //printf("Propagate to %lx\n", nextBB->start.ToUL());
                         toBeProcessed.insert(nextBB);
                         nextBB->baseReg = bb->baseReg;
                         nextBB->baseRegSet = 0;
                         Disassemble(m_text + (nextBB->start - m_textVa), nextBB->start, nextBB->length, 
                             [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(ci, va, dinst); });
-                            [this, nextBB](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(nextBB, ci, va, dinst); });
                         if (nextBB->baseRegClobbered == 0)
                             nextBB->baseRegClobbered = nextBB->length;
                     }

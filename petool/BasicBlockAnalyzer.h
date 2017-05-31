@@ -14,7 +14,7 @@ struct BasicBlock;
 class BasicBlockAnalyzer
 {
 public:
-    BasicBlockAnalyzer(const unsigned char * text, Rva textVa, DWORD textSize) : m_text(text), m_textVa(textVa), m_textSize(textSize)
+    BasicBlockAnalyzer(const unsigned char * text, Rva textVa, DWORD textSize, const std::set<Rva> &interestingAddresses) : m_text(text), m_textVa(textVa), m_textSize(textSize), m_interestingAddresses(interestingAddresses)
     {
     }
 
@@ -27,9 +27,13 @@ public:
     {
         return m_targets;
     }
+    const std::set<Rva> &GetPossibleVtables() const
+    {
+        return m_possibleVTables;
+    }
 private:
     bool GatherNewTargets(const _CodeInfo &ci, Rva va, const _DInst dinst);
-    bool CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
+    bool CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst);
     bool CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
     void CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va, const _DInst dinst);
     void PropagateBaseReg();
@@ -44,9 +48,11 @@ private:
     const unsigned char *m_text;
     Rva m_textVa;
     DWORD m_textSize;
+	const std::set<Rva> &m_interestingAddresses;
     std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
     std::map<Rva, TargetInfo> m_targets;
 	std::set<Rva> m_newTargets;
+	std::set<Rva> m_possibleVTables;
     std::map<Rva, std::vector<BasicBlock *>> m_unprocessedTargets;
     BasicBlock m_newBlock;
     int m_jumpTableState;

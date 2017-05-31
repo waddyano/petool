@@ -41,6 +41,11 @@ public:
         return Rva(m_va + (long)off);
     }
 
+    inline Rva operator - (long long off) const
+    {
+        return Rva(m_va - (long)off);
+    }
+
     inline Rva &operator += (long long off)
     {
         m_va += (long)off;
