@@ -128,7 +128,7 @@ static int clobberedReg(int reg)
     return reg;
 }
 
-bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst)
+bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
 {
     if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && clobberedReg(dinst.ops[0].index) == m_newBlock.baseReg)
     { 
