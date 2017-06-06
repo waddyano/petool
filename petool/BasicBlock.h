@@ -28,12 +28,15 @@ struct BasicBlock
 
     std::string GetLabel() const
     {
+        if (!label.empty())
+            return label;
         char buf[64];
         snprintf(buf, sizeof(buf), "%s_bb%u", isFunctionStart ? "fn" : "lab", id);
         return buf;
     }
 
     unsigned int id;
+    std::string label;
     Rva start;
     unsigned long length;
     std::vector<Rva> successors;
