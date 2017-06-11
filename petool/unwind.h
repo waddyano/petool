@@ -48,7 +48,12 @@ typedef struct UNWIND_INFO
         //
         // If (Flags & UNW_FLAG_EHANDLER)
         //
-        ULONG ExceptionHandler;
+        struct
+        {
+            ULONG ExceptionHandler;
+            ULONG ExceptionHandlerData;
+        } EHandler;
+
         //
         // Else if (Flags & UNW_FLAG_CHAININFO)
         //

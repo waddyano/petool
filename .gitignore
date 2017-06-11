@@ -37,3 +37,10 @@
 /edit2.txt
 /.vs/en/v14/.suo
 /Utils/x64/Release
+*.suo
+*.exp
+*.asm
+*.pdb
+*.obj
+*.lib
+/test-dll-exe/x64/Release

@@ -21,8 +21,10 @@ struct BasicBlock
     }
 
     BasicBlock(const BasicBlock &other) : 
-        id(++nextId), start(other.start), length(other.length), successors(other.successors), predecessors(other.predecessors), baseReg(other.baseReg), baseRegSet(other.baseRegSet), baseRegClobbered(other.baseRegClobbered),
-        endsInIndirectJump(other.endsInIndirectJump), propagated(other.propagated), isJumpTable(other.isJumpTable), isFunctionStart(other.isFunctionStart), jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
+        id(++nextId), start(other.start), length(other.length), successors(other.successors), predecessors(other.predecessors), 
+        baseReg(other.baseReg), baseRegSet(other.baseRegSet), baseRegClobbered(other.baseRegClobbered),
+        endsInIndirectJump(other.endsInIndirectJump), propagated(other.propagated), isJumpTable(other.isJumpTable), isFunctionStart(other.isFunctionStart), containsCall(other.containsCall),
+        jumpTableSize(other.jumpTableSize), jumpTableReg(other.jumpTableReg)
     {
     }
 
@@ -48,6 +50,7 @@ struct BasicBlock
     bool propagated = false;
     bool isJumpTable = false;
     bool isFunctionStart = false;
+    bool containsCall = false;
     unsigned long jumpTableSize = 0;
     unsigned long jumpTableElementSize = 0;
     int jumpTableReg = R_NONE;

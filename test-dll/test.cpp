@@ -5,7 +5,7 @@
 #include <string>
 #include <Windows.h>
 
-#define EXPORT __declspec(dllexport)
+#include "test.h"
 
 static double a[10];
 static long flags[99];
@@ -29,7 +29,7 @@ static char *strings []
     "fourteen"
 };
 
-extern EXPORT void dllfn1()
+extern void dllfn1()
 {
     for (int i = 0; i < 10; ++i)
         a[i] = sqrt(double(i));
@@ -37,7 +37,7 @@ extern EXPORT void dllfn1()
     _InterlockedCompareExchange((volatile long *)&flags[50], 0, 1);
 }
 
-extern EXPORT void dllfn2(int i, int j)
+extern void dllfn2(int i, int j)
 {
     switch (i)
     {
@@ -86,54 +86,187 @@ static void t()
     throw std::string("boom");
 }
 
-static void vio()
+static bool vio()
 {
     __try
     {
         int *x = 0;
         printf("about to blow!\n");
         *x = 99;
+        return false;
     }
     __except(EXCEPTION_EXECUTE_HANDLER)
     {
         printf("vio! %d\n", 0x1234);
+        return true;
     }
 }
 
-static void afn(bool seh)
+static bool afn(bool seh)
 {
     std::string s("local");
     if (seh)
-        vio();
+        return vio();
     else
         t();
 }
 
-static void b(bool seh)
+static bool b(bool seh)
 {
     std::string s("local");
     try
     {
-        afn(seh);
+        return afn(seh);
     }
     catch (const std::string &e)
     {
         printf("caught %s\n", e.c_str());
+        return true;
+    }
+    catch (...)
+    {
+        return false;
     }
 }
 
-extern EXPORT int excpt(bool seh)
+extern bool excpt(bool seh)
 {
     std::string s("mainlocal");
-    b(seh);
-    return 0;
+    return b(seh);
 }
 
-extern EXPORT void crit()
+extern void crit()
 {
     CRITICAL_SECTION sect;
     InitializeCriticalSectionAndSpinCount(&sect, 4000);
     EnterCriticalSection(&sect);
     LeaveCriticalSection(&sect);
     DeleteCriticalSection(&sect);
+}
+
+extern int dllfn3(char c)
+{
+    int x = 4;
+    int z = c + 1;
+    int zz = c + 2;
+    int zzz = c + 3;
+    if (z != 0)
+    { 
+        --z;
+        if (zz != 0)
+            --zzz;
+    }
+    switch (z)
+    {
+    case '0':
+    case 'a':
+        x += c;
+    case '1':
+    case 'b':
+        x += c;
+    case '2':
+    case 'c':
+        x += c;
+    case '3':
+    case 'd':
+        x += c;
+    case '4':
+    case 'e':
+        x += c;
+    case '5':
+    case 'f':
+        x += c;
+    case '6':
+    case 'g':
+        x += c;
+    case '7':
+    case 'h':
+        x += c;
+    case '8':
+    case 'i':
+        x += c;
+    case '9':
+    case 'j':
+        x += c;
+        break;
+    case 10001:
+        x -= 99;
+        break;
+    case 10003:
+        x -= 999;
+        break;
+    case 10005:
+        x -= 9999;
+        break;
+    case 10007:
+        x -= 99999;
+        break;
+    case 10009:
+        x -= 999999;
+        break;
+    case 10010:
+        x -= 999999;
+        break;
+    case 10011:
+        x -= 999998;
+        break;
+    case 10013:
+        x -= 999997;
+        break;
+    }
+    printf("%d %d %d\n", z, zz, zzz);
+    return x * 3;
+}
+
+class E1 : public std::exception
+{
+public:
+    const char *what() const
+    {
+        return "E1";
+    }
+};
+
+class E2 : public E1
+{
+public:
+    const char *what() const
+    {
+        return "E2";
+    }
+};
+
+static void throw1(int i)
+{
+    switch (i)
+    {
+    case 1:
+        throw E1();
+    case 2:
+        throw E2();
+    case 3:
+        throw std::string("xyzzy");
+    case 4:
+        throw 99;
+    }
+}
+
+extern void excpt2(int i) 
+{
+    try
+    {
+        throw1(i);
+    }
+    catch (const E1 &e)
+    {
+        printf("caught %s\n", e.what());
+    }
+    catch (const std::string &s)
+    {
+        printf("caught another %s\n", s.c_str());
+    }
+    catch (...)
+    {
+        printf("caught the dregs!\n");
+    }
 }

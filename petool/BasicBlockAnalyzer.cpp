@@ -46,65 +46,65 @@ void BasicBlockAnalyzer::AddTargetToProcess(Rva target, BasicBlock *predBB)
 
 bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
 {
-    printf("jump:\n");
+    printf("jump: ");
     
     SimplePrint(ci, va, dinst);
-	for (int j = 0; j < OPERANDS_NO; ++j)
-	{
-        bool addJumpTable = false;
-        unsigned long sz;
-        if (dinst.opcode == I_MOVZX && dinst.ops[j].type == O_MEM && dinst.base == bb->baseReg)
-        {
-            BasicBlock *prevBB = nullptr;
-            BasicBlock t(bb->predecessors[0]);
-            auto it = m_basicBlocks.find(&t);
-            if (it != m_basicBlocks.end())
+    bool addJumpTable = false;
+    unsigned long sz;
+    if (dinst.opcode == I_MOVZX && dinst.ops[1].type == O_MEM && (dinst.base == bb->baseReg || (dinst.ops[1].index == bb->baseReg && dinst.ops[1].size == 8)))
+    {
+        BasicBlock *prevBB = nullptr;
+        BasicBlock t(bb->predecessors[0]);
+        auto it = m_basicBlocks.find(&t);
+        if (it != m_basicBlocks.end())
+        { 
+            sz = (*it)->jumpTableSize;
+            printf("disp %lld size %d base %s%s\n", dinst.disp, sz, GET_REGISTER_NAME(bb->baseReg), bb->baseReg != dinst.base ? " second" : "");
+            unsigned long max_off = 0;
+            for (unsigned long i = 0; i < sz; ++i)
             { 
-                sz = (*it)->jumpTableSize;
-                printf("disp %lld size %d\n", dinst.disp, sz);
-                unsigned long max_off = 0;
-                for (unsigned long i = 0; i < sz; ++i)
-                { 
-                    unsigned long off;
+                unsigned long off;
                     
-                    if (dinst.ops[j].size == 8)
-                        off = ((unsigned char *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    else if (dinst.ops[j].size == 16)
-                        off = ((unsigned short *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    else if (dinst.ops[j].size == 32)
-                        off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    if (off > max_off)
-                        max_off = off;
-                }
-                printf("max off %lu\n", max_off);
-                jumpTableSize = max_off + 1;
-                addJumpTable = true;           
+                if (dinst.ops[1].size == 8)
+                    off = ((unsigned char *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                else if (dinst.ops[1].size == 16)
+                    off = ((unsigned short *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                else if (dinst.ops[1].size == 32)
+                    off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                if (off > max_off)
+                    max_off = off;
             }
+            printf("max off %lu\n", max_off);
+            jumpTableSize = max_off + 1;
+            addJumpTable = true;           
         }
-        if (dinst.opcode == I_MOV && dinst.ops[j].type == O_MEM && dinst.ops[j].size == 32 && dinst.base == bb->baseReg)
-        {
-            BasicBlock *prevBB = nullptr;
-            BasicBlock t(bb->predecessors[0]);
-            auto it = m_basicBlocks.find(&t);
-            if (it != m_basicBlocks.end())
-            { 
-                sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
-                printf("disp %lld size %d\n", dinst.disp, sz);
-                std::set<Rva> added;
-                for (unsigned long i = 0; i < sz; ++i)
-                { 
-                    unsigned long off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    printf("off %lx\n", off);
-                    Rva next(off);
-                    if (added.count(next) > 0)
-                        continue;
-                    added.insert(next);
-                    AddTargetToProcess(next, bb);
-                    bb->successors.push_back(next);
-                }
+    }
 
-                addJumpTable = true;
+    if (dinst.opcode == I_MOV && dinst.ops[1].type == O_MEM && dinst.ops[1].size == 32 && dinst.base == bb->baseReg)
+    {
+        BasicBlock *prevBB = nullptr;
+        BasicBlock t(bb->predecessors[0]);
+        auto it = m_basicBlocks.find(&t);
+        if (it != m_basicBlocks.end())
+        { 
+            sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
+            printf("disp %lld size %d\n", dinst.disp, sz);
+            printf("offsets ");
+            std::set<Rva> added;
+            for (unsigned long i = 0; i < sz; ++i)
+            { 
+                unsigned long off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                printf(" %lx", off);
+                Rva next(off);
+                if (added.count(next) > 0)
+                    continue;
+                added.insert(next);
+                AddTargetToProcess(next, bb);
+                bb->successors.push_back(next);
             }
+            printf("\n");
+
+            addJumpTable = true;
         }
 
         if (addJumpTable)
@@ -112,7 +112,7 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
             auto jt = new BasicBlock();
             jt->isJumpTable = true;
             jt->start = Rva(dinst.disp);
-            jt->jumpTableElementSize = dinst.ops[j].size / 8;
+            jt->jumpTableElementSize = dinst.ops[1].size / 8;
             jt->length = sz * jt->jumpTableElementSize;
             m_basicBlocks.insert(jt);
         }
@@ -208,6 +208,9 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
         }
     }
 
+    if (dinst.opcode == I_CALL)
+        m_newBlock.containsCall = true;
+
 	for (int j = 0; j < OPERANDS_NO; ++j)
 	{
 		if (dinst.ops[j].type == O_NONE)
@@ -239,7 +242,7 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
                     m_newBlock.baseReg = dinst.ops[0].index;
                     m_newBlock.baseRegSet = a - m_newBlock.start;
                     m_newBlock.baseRegClobbered = 0;
-                    printf("LEA @%lx %lx - %d - reg %s\n", a.ToUL(), m_newBlock.start.ToUL(), m_newBlock.baseRegSet, GET_REGISTER_NAME(m_newBlock.baseReg));
+                    //printf("LEA @%lx %lx - %d - reg %s\n", a.ToUL(), m_newBlock.start.ToUL(), m_newBlock.baseRegSet, GET_REGISTER_NAME(m_newBlock.baseReg));
                 }
             }
 
@@ -301,6 +304,7 @@ void BasicBlockAnalyzer:: SplitBasicBlock(BasicBlock *bb, unsigned long splitOff
 {
     Rva split = bb->start + splitOffset;
     BasicBlock *splitBB = new BasicBlock(split, bb->length - splitOffset);
+    splitBB->containsCall = bb->containsCall;
     splitBB->successors = bb->successors;
     bb->successors.resize(1);
     bb->successors[0] = split;

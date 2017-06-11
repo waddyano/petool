@@ -5,7 +5,7 @@
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>-edit d:\Tools\jhead.exe -out js.exe</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>-v -dis ug_inspect.exe</LocalDebuggerCommandArguments>
     <LocalDebuggerWorkingDirectory>D:\Projects\petool</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
