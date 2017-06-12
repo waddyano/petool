@@ -16,6 +16,7 @@
 
 #include "BasicBlock.h"
 #include "BasicBlockAnalyzer.h"
+#include "ConfigFile.h"
 #include "Disassemble.h"
 #include "Exception.h"
 #include "Options.h"
@@ -1894,6 +1895,9 @@ int main(int argc, char *argv[])
     bool edit = false;
     const char *out_filename = nullptr;
     const char *out_directory = nullptr;
+
+    ConfigFile f("test.toml");
+    f.Load();
 
     for (int i = 1; i < argc; ++i)
     {

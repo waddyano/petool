@@ -1,0 +1,5 @@
+
+[redirects."api-ms-win-crt-heap-l1-1-0.dll"]
+"malloc" = "wdm_malloc"
+"free" = "wdm_free"
+
