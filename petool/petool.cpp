@@ -16,7 +16,9 @@
 
 #include "BasicBlock.h"
 #include "BasicBlockAnalyzer.h"
+#include "ConfigFile.h"
 #include "Disassemble.h"
+#include "Exception.h"
 #include "Options.h"
 #include "RTTI.h"
 #include "Rva.h"
@@ -373,11 +375,12 @@ public:
                 m_targets.insert(std::make_pair(Rva(entry.BeginAddress), TargetInfo(TargetType::FUNCTION, true)));
             if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
             {
-                m_targets.insert(std::make_pair(Rva(ui->GetHandlerInfo().ExceptionHandler), TargetInfo(TargetType::FUNCTION, true)));
+                m_targets.insert(std::make_pair(Rva(ui->GetHandlerInfo().EHandler.ExceptionHandler), TargetInfo(TargetType::FUNCTION, true)));
             }
         }
     }
 
+    // Find basic block starting at the given Rva - return null if not found
     BasicBlock *FindBasicBlock(Rva a)
     {
         BasicBlock tmp(a);
@@ -751,6 +754,12 @@ public:
 
 		GatherImportedSymbols();
 
+        auto it = m_importedSymbols.find("_CxxThrowException");
+        if (it != m_importedSymbols.end())
+        {
+            printf("throws exception! %lx\n", it->second.ToUL());
+        }
+
 		GatherExportedSymbols();
 
         if (m_optionalHeader->AddressOfEntryPoint != 0)
@@ -776,8 +785,101 @@ public:
             }
 
             BasicBlockAnalyzer analyzer(Rva2Ptr<unsigned char>(textVa), textVa, textSize, m_relocations);
-            analyzer.Analyze(std::move(seedRvas));
-            m_basicBlocks = analyzer.GetBasicBlocks();
+
+            bool first = true;
+            Rva indirectThrowException;
+
+            while (!seedRvas.empty())
+            {
+                analyzer.Analyze(std::move(seedRvas));
+                seedRvas.clear();
+                m_basicBlocks = analyzer.GetBasicBlocks();
+
+                if (first)
+                {
+                    for (BasicBlock *b : m_basicBlocks)
+                    {
+                        if (!b->isJumpTable)
+                        {
+			                Disassemble(Rva2Ptr<unsigned char>(b->start), b->start, b->length, 
+                                [this, b](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckForJumpToImport(ci, va, dinst, b); });
+
+                            if (b->label == "_CxxThrowException*")
+                                indirectThrowException = b->start;
+
+		                    auto it = m_exportedSymbols.find(b->start);
+		                    if (it != m_exportedSymbols.end())
+                                b->label = it->second;
+                        }
+                    }
+                }
+
+                if (indirectThrowException != Rva::Invalid())
+                { 
+                    for (BasicBlock *b : m_basicBlocks)
+                    {
+                        if (b->containsCall)
+                        {
+                            rdxValue = Rva::Invalid();
+
+			                Disassemble(Rva2Ptr<unsigned char>(b->start), b->start, b->length, 
+                                [this, b, indirectThrowException](const _CodeInfo &ci, Rva va, const _DInst &dinst) 
+                                { 
+                                    return this->CheckForThrowException(ci, va, dinst, b, indirectThrowException); 
+                                });
+                        }
+                    }
+
+                    printf("Found %zd throws!\n", throwInfoObjects.size());
+                    for (Rva throwInfo : throwInfoObjects)
+                    {
+                        printf("throw info %lx\n", throwInfo.ToUL());
+                        ThrowInfo *ti = Rva2Ptr<ThrowInfo>(throwInfo);
+                        printf("destr %lx\n", ti->destructorOffset);
+                        if (ti->destructorOffset != 0)
+                        {
+                            Rva va((unsigned long)ti->destructorOffset);
+                            BasicBlock *dbb = FindBasicBlock(Rva((unsigned long)ti->destructorOffset));
+                            if (dbb == nullptr)
+                            {
+                                printf("Destructor is new seed!\n");
+                                seedRvas.insert(va);
+                            }
+                        }
+
+                        printf("catchable %x\n", ti->catchableTypeArrayOffset);
+                        m_dataToAdjust.insert(throwInfo + offsetof(ThrowInfo, catchableTypeArrayOffset));
+                        CatchableTypeArray *cta = Rva2Ptr<CatchableTypeArray>(ti->catchableTypeArrayOffset);
+                        printf("array length %u\n", cta->count);
+                        for (unsigned int i = 0; i < cta->count; ++i)
+                        {
+                            printf("%u\n", cta->catchableTypeOffsets[i]);
+                            m_dataToAdjust.insert(Rva(ti->catchableTypeArrayOffset + offsetof(CatchableTypeArray, catchableTypeOffsets) + i * sizeof(unsigned int)));
+                            CatchableType *ct = Rva2Ptr<CatchableType>(cta->catchableTypeOffsets[i]);
+                            printf("ct %u tdo %x %u %u %u copy %x\n", ct->a, ct->typeDescriptorOffset, ct->c, ct->d, ct->e, ct->copyConstructorOffset);
+                            if (ct->copyConstructorOffset != 0)
+                            {
+                                Rva va((unsigned long)ct->copyConstructorOffset);
+                                BasicBlock *cbb = FindBasicBlock(va);
+                                if (cbb == nullptr)
+                                {
+                                    printf("Copy constructor is new seed!\n");
+                                    seedRvas.insert(va);
+                                }
+                            }
+                            if (ct->typeDescriptorOffset != 0)
+                            {
+                                m_dataToAdjust.insert(Rva(cta->catchableTypeOffsets[i] + offsetof(CatchableType, typeDescriptorOffset)));
+                                auto descriptor = Rva2Ptr<RTTITypeDescriptor>(ct->typeDescriptorOffset);
+                                printf("name %s\n", descriptor->name);
+                            }
+                        }
+                    }
+                }
+
+                first = false;
+            }
+
             for (auto p : analyzer.GetTargets())
             {
                 auto it = m_targets.find(p.first);
@@ -830,6 +932,50 @@ public:
                     }
                 }
             }
+
+            int sectionNo = FindSection(".pdata");
+            if (sectionNo >= 0)
+            {
+                DWORD nEntries = m_sections[sectionNo].m_section.SizeOfRawData / 12;
+                RUNTIME_FUNCTION *entries = (RUNTIME_FUNCTION *)m_sections[sectionNo].m_rawData;
+                for (DWORD i = 0; i < nEntries; ++i)
+                {
+                    RUNTIME_FUNCTION &entry = entries[i];
+                    if (entry.BeginAddress == 0)
+                        break;
+                    auto s = Rva2Section(entry.UnwindInfoAddress);
+                    if (s != nullptr)
+                    {
+                        XData *xd = nullptr;
+                        auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
+                        if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
+                        {
+                            BasicBlock *excbb = FindBasicBlock(Rva(ui->GetHandlerInfo().EHandler.ExceptionHandler));
+                            if (excbb != nullptr)
+                            { 
+                                if (excbb->GetLabel() == "__CxxFrameHandler3*")
+                                { 
+                                    xd = Rva2Ptr<XData>(ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                                }
+                            }
+                        }
+                        if (xd != nullptr)
+                        {
+                            printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
+                            auto tm = Rva2Ptr<TryMap>(xd->tryMapOffset);
+                            if (tm != nullptr)
+                            {
+                                auto hm = Rva2Ptr<HandlerMap>(tm->handlerMapOffset);
+                                for (unsigned int j = 0; j < tm->handlerMapCount; ++j)
+                                {
+                                    printf("handler map %u: tdo %lx catch fn %lx\n", j, hm[j].typeDescriptorOffset, hm[j].catchFunctionOffset);
+                                    m_dataToAdjust.insert(Rva(tm->handlerMapOffset + offsetof(HandlerMap, typeDescriptorOffset) + j * sizeof(HandlerMap)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -863,6 +1009,50 @@ public:
         return false;
     }
 
+    Rva rdxValue;
+    std::unordered_set<Rva> throwInfoObjects;
+
+    bool CheckForThrowException(const _CodeInfo &ci, Rva va, const _DInst dinst, BasicBlock *b, Rva indirectThrowException)
+    {
+        if (dinst.opcode == I_LEA && dinst.ops[0].type == O_REG && dinst.ops[0].index == R_RDX && (dinst.flags & FLAG_RIP_RELATIVE) != 0 &&
+            dinst.ops[1].type == O_SMEM)
+        {
+            rdxValue = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
+        }
+        else if (dinst.opcode == I_XOR && dinst.ops[0].type == O_REG && dinst.ops[0].index == R_EDX && dinst.ops[1].type == O_REG && dinst.ops[1].index == dinst.ops[1].index)
+        {
+            rdxValue = Rva(0ul);
+        }
+
+        if (dinst.opcode == I_CALL)
+        {
+            if ((dinst.flags & FLAG_RIP_RELATIVE) != 0 && dinst.ops[0].type == O_SMEM)
+            {
+			    Rva target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
+                if (target == indirectThrowException)
+                {
+                    if (rdxValue == Rva::Invalid())
+                        printf("!!!! Expected rdx to be set!\n");
+                    else if (rdxValue.ToUL() != 0)
+                        throwInfoObjects.insert(rdxValue);
+                }
+            }
+            else if (dinst.ops[0].type == O_PC)
+            {
+			    Rva target = va + INSTRUCTION_GET_TARGET(&dinst);
+                if (target == indirectThrowException)
+                {
+                    if (rdxValue == Rva::Invalid())
+                        printf("!!!! Expected rdx to be set! %lx\n", va.ToUL());
+                    else if (rdxValue.ToUL() != 0)
+                        throwInfoObjects.insert(rdxValue);
+                }
+            }
+        }
+
+        return true;
+    }
+
     void DoDisassemble()
     {
         GatherAllTargets();
@@ -875,17 +1065,6 @@ public:
         {
             printf("no text section\n");
             return;
-        }
-
-        for (BasicBlock *b : m_basicBlocks)
-        {
-            if (!b->isJumpTable)
-            {
-			    Disassemble(Rva2Ptr<unsigned char>(b->start), b->start, b->length, [this, b](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckForJumpToImport(ci, va, dinst, b); });
-		        auto it = m_exportedSymbols.find(b->start);
-		        if (it != m_exportedSymbols.end())
-                    b->label = it->second;
-            }
         }
 
 		DWORD textVa = m_sectionHeaders[textSection].VirtualAddress;
@@ -1128,21 +1307,58 @@ public:
             RUNTIME_FUNCTION &entry = entries[i];
             if (entry.BeginAddress == 0)
                 break;
+            BasicBlock *beginbb = FindBasicBlock(Rva(entry.BeginAddress));
+            if (beginbb != nullptr)
+                printf("begin %s\n", beginbb->GetLabel().c_str());
             printf("%08x %08x %08x\n", entry.BeginAddress, entry.EndAddress, entry.UnwindInfoAddress);
             auto s = Rva2Section(entry.UnwindInfoAddress);
             if (s != nullptr)
             {
+                XData *xd = nullptr;
                 auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
-                printf("%u %u %s prolog %u # codes %u -- ", ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
+                printf("DD %lx %u %u %s prolog %u # codes %u -- ", * (unsigned long *) ui, ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
                 if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
                 {
-                    printf(" ehandler %lx", ui->GetHandlerInfo().ExceptionHandler);
+                    printf(" ehandler %lx", ui->GetHandlerInfo().EHandler.ExceptionHandler);
+                    BasicBlock *excbb = FindBasicBlock(Rva(ui->GetHandlerInfo().EHandler.ExceptionHandler));
+                    if (excbb != nullptr)
+                    { 
+                        printf(" exc %s", excbb->GetLabel().c_str());
+                        if (excbb->GetLabel() == "__CxxFrameHandler3*")
+                        { 
+                            printf(" data %lx", ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                            xd = Rva2Ptr<XData>(ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                        }
+                    }
                 }
                 if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
                 {
                     printf(" function %lx %lx %lx", ui->GetHandlerInfo().FunctionEntry.FunctionStartAddress, ui->GetHandlerInfo().FunctionEntry.FunctionEndAddress, ui->GetHandlerInfo().FunctionEntry.UnwindInfoAddress);
                 }
                 printf("\n");
+                if (xd != nullptr)
+                {
+                    printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
+                    auto um = Rva2Ptr<UnwindMap>(xd->unwindMapOffset);
+                    if (um != nullptr)
+                        printf("unwind destructor %lx\n", um->destructorOffset);
+                    auto tm = Rva2Ptr<TryMap>(xd->tryMapOffset);
+                    auto ip2 = Rva2Ptr<IP2Offset>(xd->stateOffset);
+                    for (unsigned int j = 0; j < xd->stateCount; ++j)
+                    {
+                        printf("state %u: off %lx ?? %lx\n", j, ip2[j].functionOffset, ip2[j].b);
+                    }
+
+                    if (tm != nullptr)
+                    { 
+                        printf("try handler map %lx - count %u\n", tm->handlerMapOffset, tm->handlerMapCount);
+                        auto hm = Rva2Ptr<HandlerMap>(tm->handlerMapOffset);
+                        for (unsigned int j = 0; j < tm->handlerMapCount; ++j)
+                        {
+                            printf("handler map %u: tdo %lx catch fn %lx\n", j, hm[j].typeDescriptorOffset, hm[j].catchFunctionOffset);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1629,11 +1845,11 @@ public:
                         uint64_t &addr = *Rva2Ptr<uint64_t>(reloc->VirtualAddress + relOffset);
 
                         Rva rva(addr - m_imageBase);
-                        printf("inspect address %llx\n", addr);
+                        //printf("inspect address %llx\n", addr);
                         if (AdjustRva(&rva))
                         { 
                             addr = rva.ToUL() + m_imageBase;
-                            printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
+                            //printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
                         }
                     }
                     else
@@ -1679,6 +1895,9 @@ int main(int argc, char *argv[])
     std::vector<const char *> filenames;
     const char *out_filename = nullptr;
     const char *out_directory = nullptr;
+
+    ConfigFile f("test.toml");
+    f.Load();
 
     for (int i = 1; i < argc; ++i)
     {

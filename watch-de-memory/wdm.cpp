@@ -57,6 +57,7 @@ extern "C" __declspec(dllexport) void * wdm_calloc(size_t count, size_t sz)
 extern "C" __declspec(dllexport) void * wdm_malloc(size_t sz)
 {
     void *res = malloc(sz);
+    printStack();
     write_console("malloc %zd => %p\n", sz, res);
     return res;
 }
