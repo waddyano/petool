@@ -53,7 +53,7 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
 	{
         bool addJumpTable = false;
         unsigned long sz;
-        if (dinst.opcode == I_MOVZX && dinst.ops[j].type == O_MEM && dinst.base == bb->baseReg)
+        if (dinst.opcode == I_MOVZX && dinst.ops[j].type == O_MEM && (dinst.base == bb->baseReg || dinst.ops[j].index == bb->baseReg))
         {
             BasicBlock *prevBB = nullptr;
             BasicBlock t(bb->predecessors[0]);
@@ -128,17 +128,17 @@ static int clobberedReg(int reg)
     return reg;
 }
 
-bool BasicBlockAnalyzer::CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst)
+bool BasicBlockAnalyzer::CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst)
 {
     if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && clobberedReg(dinst.ops[0].index) == m_newBlock.baseReg)
     { 
     	Rva a = va + dinst.addr;
 
-        printf("Lifetime Clobber! %lx - %d\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet);
-        if (a == m_newBlock.start)
-            m_newBlock.baseReg = R_NONE;
+        printf("Lifetime Clobber! %lx - %d\n", bb->start.ToUL(), bb->baseRegSet);
+        if (a == bb->start)
+            bb->baseReg = R_NONE;
         else
-            m_newBlock.baseRegClobbered = a - m_newBlock.start;
+            bb->baseRegClobbered = a - bb->start;
         return false;
     }
 
@@ -478,7 +478,7 @@ void BasicBlockAnalyzer::PropagateBaseReg()
                         nextBB->baseReg = bb->baseReg;
                         nextBB->baseRegSet = 0;
                         Disassemble(m_text + (nextBB->start - m_textVa), nextBB->start, nextBB->length, 
-                            [this](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(ci, va, dinst); });
+                            [this, nextBB](const _CodeInfo &ci, Rva va, const _DInst &dinst) { return this->CheckBaseRegLifetime(nextBB, ci, va, dinst); });
                         if (nextBB->baseRegClobbered == 0)
                             nextBB->baseRegClobbered = nextBB->length;
                     }

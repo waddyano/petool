@@ -33,7 +33,7 @@ public:
     }
 private:
     bool GatherNewTargets(const _CodeInfo &ci, Rva va, const _DInst dinst);
-    bool CheckBaseRegLifetime(const _CodeInfo &ci, Rva va, const _DInst dinst);
+    bool CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
     bool CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
     void CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va, const _DInst dinst);
     void PropagateBaseReg();

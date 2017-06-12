@@ -17,6 +17,7 @@
 #include "BasicBlock.h"
 #include "BasicBlockAnalyzer.h"
 #include "Disassemble.h"
+#include "Options.h"
 #include "RTTI.h"
 #include "Rva.h"
 #include "Target.h"
@@ -46,7 +47,7 @@ static const char *directoryNames[] =
 class PEFile
 {
 public:
-	PEFile(const char *filename)
+	PEFile(const char *filename, const Options &options) : m_options(options)
 	{
         memset(&dummySection, 0, sizeof(dummySection));
         strcpy((char *)dummySection.Name, "**dum**");
@@ -259,10 +260,9 @@ public:
             {
                 char tmp[32];
                 snprintf(tmp, sizeof(tmp), "Ordinal %llu", ClearTopBit(thunkData->u1.AddressOfData));
-                char *n = _strdup(tmp);
     			//printf("Imported %016llx %s\n", m_imageBase + va, n);
-			    m_vaToImportedSymbols.insert(std::make_pair(va, n));
-                m_importedSymbols.insert(std::make_pair(n, va));
+			    m_vaToImportedSymbols.insert(std::make_pair(va, tmp));
+                m_importedSymbols.insert(std::make_pair(tmp, va));
             }
             else
             {
@@ -456,14 +456,14 @@ public:
                 if (off >= bb->baseRegSet && off < bb->baseRegClobbered)
                 {
                     Rva b = Rva(dinst.disp);
-                    if (m_verbose)
+                    if (m_options.Verbose)
                     {
                         printf("using base! %llx\n", dinst.disp);
                         Printer(ci, va, dinst);
                     }
                     if (AdjustRva(&b))
                     {
-                        if (m_verbose)
+                        if (m_options.Verbose)
                             printf("needed adjust!\n");
                         adjustDisp = true;
                         operandOffset -= dinst.dispSize / 8;
@@ -514,7 +514,7 @@ public:
 
         if (adjustDisp)
         {
-            if (m_verbose)
+            if (m_options.Verbose)
 			    printf("Instr at %lx: Adjust disp\n", (va + dinst.addr).ToUL());
 
             DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
@@ -524,7 +524,7 @@ public:
             _DInst tmp(dinst);
             tmp.disp = newDisp;
 
-            if (m_verbose)
+            if (m_options.Verbose)
                 Printer(ci, va, tmp);
             return;
         }
@@ -536,7 +536,7 @@ public:
 
             if (AdjustRva(&targetVa))
             {
-                if (m_verbose)
+                if (m_options.Verbose)
                     printf("Instr at %lx: Adjust %s[%0lx]\n", (va + dinst.addr).ToUL(), pcRel ? "pc" : "smem", targetVa.ToUL());
                 int newDisp = (int)(dinst.disp + (targetVa - oldTargetVa));
                 DWORD *dispLoc = Rva2Ptr<DWORD>((va + dinst.addr).ToUL() + operandOffset);
@@ -547,7 +547,7 @@ public:
                     memcpy(dispLoc, &newDisp, 4);
                     _DInst tmp(dinst);
                     tmp.disp = newDisp;
-                    if (m_verbose)
+                    if (m_options.Verbose)
                         Printer(ci, va, tmp);
                 }
             }
@@ -803,6 +803,7 @@ public:
                 {
                     unsigned long locatorOffset = (unsigned long)(*loc1 - m_imageBase);
                     auto locator = Rva2Ptr<RTTIObjectLocator>(locatorOffset);
+                    printf("locator offs %lu %lu\n", locatorOffset, locator->selfOffset);
                     if (locatorOffset == locator->selfOffset)
                     {
                         m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, typeDescriptorOffset)));
@@ -1046,7 +1047,7 @@ public:
         }
     }
 
-	void Process(bool disassem)
+	void Process()
 	{
 		for (int i = 0; i < 16; ++i)
 		{
@@ -1056,12 +1057,18 @@ public:
 
         PrintSections();
 
-        if (disassem)
+        if (m_options.Disassemble)
         {
             DoDisassemble();
         }
 
-        if (!disassem || m_verbose)
+        if (m_options.PrintImports)
+        { 
+            PrintImports();
+		    PrintIAT();
+        }
+
+        if (m_options.Verbose)
         {
             PrintLoadConfig();
             PrintTLS();
@@ -1069,43 +1076,45 @@ public:
             if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size != 0)
             {
                 IMAGE_RESOURCE_DIRECTORY *rsrc = Rva2Ptr<IMAGE_RESOURCE_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
-                if (m_verbose)
+                if (m_options.Verbose)
                     PrintResourceDirectory(0, (char *)rsrc, rsrc);
             }
 
-            if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size != 0)
-		    {
-                printf("Imports at %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-                IMAGE_IMPORT_DESCRIPTOR *descs = Rva2Ptr<IMAGE_IMPORT_DESCRIPTOR>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-
-			    IMAGE_IMPORT_DESCRIPTOR *desc = descs;
-                DWORD off = 0;
-			    while (desc->Name != 0)
-			    {
-                    printf("IID %x - orif %x ft %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + off, desc->OriginalFirstThunk, desc->FirstThunk);
-				    char *name = Rva2Ptr<char>(desc->Name);
-                    printf("Name RVA %x to %x\n", desc->Name, (desc->Name + (DWORD)strlen(name) + 2) & ~1);
-
-				    printf("Name %s, %s, forwarder %d\n", name, Rva2Section(desc->Name)->Name, desc->ForwarderChain);
-
-				    printf("Original %lx => %lx, %s\n", desc->OriginalFirstThunk, Rva2Offset(desc->OriginalFirstThunk), Rva2Section(desc->OriginalFirstThunk)->Name);
-                    if (desc->OriginalFirstThunk != 0)
-				        PrintThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
-				    printf("IAT %lx => %lx, %s\n", desc->FirstThunk, Rva2Offset(desc->FirstThunk), Rva2Section(desc->FirstThunk)->Name);
-                    if (desc->FirstThunk != 0)
-				        PrintThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
-				    ++desc;
-                    off+=sizeof(*desc);
-			    }
-                printf("Imports at end at %x\n", (DWORD)((desc + 1 - descs) * sizeof(IMAGE_IMPORT_DESCRIPTOR)) + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-                printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size);
-		    }
-
-		    PrintIAT();
 		    PrintRelocations();
             PrintFunctionTable();
         }
 	}
+
+    void PrintImports()
+    {
+        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size == 0)
+            return;
+
+	    printf("Imports at %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+        IMAGE_IMPORT_DESCRIPTOR *descs = Rva2Ptr<IMAGE_IMPORT_DESCRIPTOR>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+
+		IMAGE_IMPORT_DESCRIPTOR *desc = descs;
+        DWORD off = 0;
+		while (desc->Name != 0)
+		{
+            printf("IID %x - orig %x ft %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + off, desc->OriginalFirstThunk, desc->FirstThunk);
+			char *name = Rva2Ptr<char>(desc->Name);
+            printf("Name RVA %x to %x\n", desc->Name, (desc->Name + (DWORD)strlen(name) + 2) & ~1);
+
+			printf("Name %s, %s, forwarder %d\n", name, Rva2Section(desc->Name)->Name, desc->ForwarderChain);
+
+			printf("Original %lx => %lx, %s\n", desc->OriginalFirstThunk, Rva2Offset(desc->OriginalFirstThunk), Rva2Section(desc->OriginalFirstThunk)->Name);
+            if (desc->OriginalFirstThunk != 0)
+				PrintThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
+			printf("IAT %lx => %lx, %s\n", desc->FirstThunk, Rva2Offset(desc->FirstThunk), Rva2Section(desc->FirstThunk)->Name);
+            if (desc->FirstThunk != 0)
+				PrintThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
+			++desc;
+            off+=sizeof(*desc);
+		}
+        printf("Imports at end at %x\n", (DWORD)((desc + 1 - descs) * sizeof(IMAGE_IMPORT_DESCRIPTOR)) + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+        printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size);
+    }
 
     void PrintFunctionTable()
     {
@@ -1140,7 +1149,7 @@ public:
 
     void AdjustResourceDirectory(char *resourceBase, IMAGE_RESOURCE_DIRECTORY *rsrc)
     {
-        if (m_verbose)
+        if (m_options.Verbose)
             printf("Resource counts id %lx name %lx\n", rsrc->NumberOfIdEntries, rsrc->NumberOfNamedEntries);
         IMAGE_RESOURCE_DIRECTORY_ENTRY *entry = (IMAGE_RESOURCE_DIRECTORY_ENTRY *) (rsrc + 1);
         for (int i = 0; i < rsrc->NumberOfNamedEntries; ++i)
@@ -1150,7 +1159,7 @@ public:
         }
         for (int i = 0; i < rsrc->NumberOfIdEntries; ++i)
         {
-            if (m_verbose)
+            if (m_options.Verbose)
                 printf("id %lx off %lx\n", entry->Id, entry->OffsetToData);
             if (entry->DataIsDirectory)
             {
@@ -1160,7 +1169,7 @@ public:
             else
             {
                 IMAGE_RESOURCE_DATA_ENTRY *data = (IMAGE_RESOURCE_DATA_ENTRY *)(resourceBase + entry->OffsetToData);
-                if (m_verbose)
+                if (m_options.Verbose)
                     printf("resource offset %lx\n", data->OffsetToData);
                 AdjustRva(&data->OffsetToData);
             }
@@ -1542,14 +1551,20 @@ public:
             for (unsigned int i = 0; i < nEntries; ++i)
             {
                 DWORD64 e = entries[i];
-                printf("%llx\n", e);
-                if (e != 0 && !GetTopBit(e))
+                if (e != 0)
                 {
-                    IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(Rva(e));
-                    if (iin == nullptr)
-                        printf("bad iin\n");
+                    if (!GetTopBit(e))
+                    {
+                        IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(Rva(e));
+                        if (iin == nullptr)
+                            printf("bad iin\n");
+                        else
+                            printf("%llx %s\n", e, iin->Name);
+                    }
                     else
-                        printf("iin %s\n", iin->Name);
+                    {
+                        printf("Ordinal: %llx\n", ClearTopBit(e));
+                    }
                 }
             }
 		}
@@ -1635,11 +1650,6 @@ public:
 		}
 	}
 
-    void SetVerbose(bool v)
-    {
-        m_verbose = v;
-    }
-
 private:
     std::set<BasicBlock *, BlockStartLess> m_basicBlocks;
     std::map<Rva, TargetInfo> m_targets;
@@ -1660,15 +1670,13 @@ private:
 	std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
 	std::unordered_map<std::string, Rva> m_importedSymbols;
 	std::unordered_map<Rva, std::string> m_exportedSymbols;
-    bool m_verbose = false;
+    Options m_options;
 };
 
 int main(int argc, char *argv[])
 {
-    bool disassem = false;
-    bool verbose = false;
+    Options options;
     std::vector<const char *> filenames;
-    bool edit = false;
     const char *out_filename = nullptr;
     const char *out_directory = nullptr;
 
@@ -1677,11 +1685,13 @@ int main(int argc, char *argv[])
         if (argv[i][0] == '-')
         {
             if (strcmp(argv[i], "-dis") == 0)
-                disassem = true;
+                options.Disassemble = true;
             else if (strcmp(argv[i], "-edit") == 0)
-                edit = true;
+                options.Edit = true;
             else if (strcmp(argv[i], "-v") == 0)
-                verbose = true;
+                options.Verbose = true;
+            else if (strcmp(argv[i], "-imports") == 0)
+                options.PrintImports = true;
             else if (strcmp(argv[i], "-out") == 0)
             {
                 if (i < argc - 1)
@@ -1705,7 +1715,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (edit && (out_filename == nullptr && out_directory == nullptr))
+    if (options.Verbose)
+        options.PrintImports = true;
+
+    if (options.Edit && (out_filename == nullptr && out_directory == nullptr))
     {
         fprintf(stderr, "expect -out <filename> or -outd <directory>\n");
         exit(EXIT_FAILURE);
@@ -1716,11 +1729,9 @@ int main(int argc, char *argv[])
     { 
         try
         { 
-            PEFile file(filename);
+            PEFile file(filename, options);
 
-            file.SetVerbose(verbose);
-
-            if (edit)
+            if (options.Edit)
             {
                 std::string output = out_filename != nullptr ? out_filename : "";
 
@@ -1750,7 +1761,7 @@ int main(int argc, char *argv[])
             }
             else
             { 
-	            file.Process(disassem);
+	            file.Process();
             }
             printf("OK\n");
         }
