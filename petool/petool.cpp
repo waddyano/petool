@@ -699,6 +699,7 @@ public:
 		printf("sym tab %d\n", fileHeader->PointerToSymbolTable);
 		printf("load address %llx\n", m_optionalHeader->ImageBase);
 		m_imageBase = m_optionalHeader->ImageBase;
+        m_newImageBase = m_options.FixedAddress ? 0x500000000 : m_imageBase;
         printf("Entry %x\n", m_optionalHeader->AddressOfEntryPoint);
         printf("SizeImage %lx SizeHeaders %lx\n", m_optionalHeader->SizeOfImage, m_optionalHeader->SizeOfHeaders);
 
@@ -1479,9 +1480,16 @@ public:
         unsigned long tmp = (unsigned long)(*va - m_imageBase);
         if (AdjustRva(&tmp))
         { 
-            *va = m_imageBase + tmp;
+            *va = m_newImageBase + tmp;
             return true;
         }
+
+        if (m_newImageBase != m_imageBase)
+        {
+            *va = m_newImageBase + tmp;
+            return true;
+        }
+
         return false;
     }
 
@@ -1563,6 +1571,28 @@ public:
         }
     }
 
+    void AdjustExports()
+    {
+  		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size != 0)
+		{
+			IMAGE_EXPORT_DIRECTORY *exports = Rva2Ptr<IMAGE_EXPORT_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+			DWORD nameAddr = exports->AddressOfNames;
+			DWORD *addressOfNames = Rva2Ptr<DWORD>(exports->AddressOfNames);
+			DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
+			for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
+			{
+                Rva va(addressOfFunctions[i]);
+                if (AdjustRva(&va))
+                {
+    				char *name = Rva2Ptr<char>(addressOfNames[i]);
+                    printf("Adjusted export! %s %lx\n", name, va.ToUL());
+                    addressOfFunctions[i] = va.ToUL();
+                }
+			}
+		}
+
+    }
+
     void ExtendRData()
     {
         auto psection = Rva2Section(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
@@ -1593,6 +1623,7 @@ public:
         }
 
         AdjustRIPAddresses();
+        AdjustExports();
 
         for (auto v : m_dataToAdjust)
         {
@@ -1754,6 +1785,11 @@ public:
     void Edit()
     {
         ExtendRData();
+        if (m_options.FixedAddress)
+        {
+            m_optionalHeader->DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE;
+            m_optionalHeader->ImageBase = 0x500000000;
+        }
     }
 
 	void PrintIAT()
@@ -1846,9 +1882,9 @@ public:
 
                         Rva rva(addr - m_imageBase);
                         //printf("inspect address %llx\n", addr);
-                        if (AdjustRva(&rva))
+                        if (AdjustRva(&rva) || m_imageBase != m_newImageBase)
                         { 
-                            addr = rva.ToUL() + m_imageBase;
+                            addr = rva.ToUL() + m_newImageBase;
                             //printf("adjusted dir64 %lx %llx\n", reloc->VirtualAddress + relOffset, addr);
                         }
                     }
@@ -1879,6 +1915,7 @@ private:
     std::vector<SECTION> m_sections;
 	IMAGE_OPTIONAL_HEADER64 *m_optionalHeader;
 	ULONGLONG m_imageBase;
+	ULONGLONG m_newImageBase;
     _DInst m_lastInst;
     int m_lastOperandOffset;
     std::vector<Insertion> m_insertions;
@@ -1911,6 +1948,8 @@ int main(int argc, char *argv[])
                 options.Verbose = true;
             else if (strcmp(argv[i], "-imports") == 0)
                 options.PrintImports = true;
+            else if (strcmp(argv[i], "-fix") == 0)
+                options.FixedAddress = true;
             else if (strcmp(argv[i], "-out") == 0)
             {
                 if (i < argc - 1)

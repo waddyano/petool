@@ -11,4 +11,5 @@ public:
     bool PrintImports;
     bool Verbose;
     bool Edit;
+    bool FixedAddress;
 };
