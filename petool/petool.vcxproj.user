@@ -5,8 +5,8 @@
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>-v -dis ug_inspect.exe</LocalDebuggerCommandArguments>
-    <LocalDebuggerWorkingDirectory>D:\Projects\petool</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerCommandArguments>-v -edit E:\workdir\groups\assemblies_nx12_ph21\wntx64\lib\windowsui.dll -out w.dll</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(SolutionDir)</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

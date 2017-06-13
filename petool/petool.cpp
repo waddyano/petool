@@ -1593,7 +1593,7 @@ public:
 
     }
 
-    void ExtendRData()
+    void ExtendImportData()
     {
         auto psection = Rva2Section(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
         if (psection == nullptr)
@@ -1654,9 +1654,14 @@ public:
 
     void AddImports(SECTION &s)
     {
-        DWORD extra = 8192;
+        DWORD extra = 8192 + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
+
+        if ((extra & 4095) != 0)
+            extra = (extra + 4096) & ~4095;
 
         unsigned char *newData = (unsigned char *)calloc(s.m_section.SizeOfRawData + extra, 1);
+        printf("oldSize %d\n", s.m_section.SizeOfRawData);
+        printf("newData %p %p\n", newData, newData + s.m_section.SizeOfRawData + extra);
 
         DWORD oldVaSize = (s.m_section.SizeOfRawData + 4095) & ~4095;
         DWORD newVaSize = (s.m_section.SizeOfRawData + extra + 4095) & ~4095;
@@ -1692,6 +1697,8 @@ public:
                 ++descCount;
                 ++desc;
             }
+
+            printf("descCount %d size %zd\n", descCount, descCount * sizeof(IMAGE_IMPORT_DESCRIPTOR));
 
             IMAGE_IMPORT_DESCRIPTOR *newDescs = (IMAGE_IMPORT_DESCRIPTOR *) inserted;
             memcpy(newDescs, descs, descCount * sizeof(IMAGE_IMPORT_DESCRIPTOR));
@@ -1743,11 +1750,13 @@ public:
             unsigned int nSymbols = sizeof(symbols) / sizeof(symbols[0]);
             p = AddIINs(p, added, nSymbols, replacement_symbols);
 
-            printf("added %x import orig %x\n", Ptr2Rva(added).ToUL(), added->OriginalFirstThunk);
 
             IMAGE_THUNK_DATA *newIat = (IMAGE_THUNK_DATA *)p;
             DWORD oldVa = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress;
             DWORD oldSize = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
+            printf("added %x import orig %x - oldSize %lu\n", Ptr2Rva(added).ToUL(), added->OriginalFirstThunk, oldSize);
+            printf("%p %p\n", newIat, Rva2Ptr<char *>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress));
+            printf("tops %p %p\n", newIat + oldSize, Rva2Ptr<char *>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress) + oldSize);
             memcpy(newIat, Rva2Ptr<char *>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress), oldSize);
             m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress = Ptr2Rva(newIat).ToUL();
             for (unsigned int i = 0; i < descCount; ++i)
@@ -1784,7 +1793,7 @@ public:
 
     void Edit()
     {
-        ExtendRData();
+        ExtendImportData();
         if (m_options.FixedAddress)
         {
             m_optionalHeader->DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE;
@@ -1797,9 +1806,9 @@ public:
         DWORD size = m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
 		if (size != 0)
 		{
-			printf("IAT dir %x size %d\n", Rva2Offset(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress), size);
             DWORD64 *entries = Rva2Ptr<DWORD64>(Rva(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress));
             DWORD nEntries = size / sizeof(*entries);
+			printf("IAT dir %x size %d nEntries %lu\n", Rva2Offset(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress), size, nEntries);
             for (unsigned int i = 0; i < nEntries; ++i)
             {
                 DWORD64 e = entries[i];
