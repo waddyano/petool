@@ -3,13 +3,14 @@
 class Options
 {
 public:
-    Options() : Disassemble(false), PrintImports(false), Verbose(false), Edit(false)
+    Options()
     {
     }
 
-    bool Disassemble;
-    bool PrintImports;
-    bool Verbose;
-    bool Edit;
-    bool FixedAddress;
+    bool Disassemble = false;
+    bool PrintImports = false;
+    bool PrintImportedDLLs = false;
+    bool Verbose = false;
+    bool Edit = false;
+    bool FixedAddress = false;
 };

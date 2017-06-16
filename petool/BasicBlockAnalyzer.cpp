@@ -158,7 +158,8 @@ void BasicBlockAnalyzer::CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va
                 m_newBlock.jumpTableSize = dinst.imm.byte;
             else if (dinst.ops[1].size == 32)
                 m_newBlock.jumpTableSize = dinst.imm.dword;
-            printf("%lx: reg size %d op size %d - compare against %d\n", a.ToUL(), dinst.ops[0].size, dinst.ops[1].size, m_newBlock.jumpTableSize);
+            if (m_verbose)
+                printf("%lx: reg size %d op size %d - compare against %d\n", a.ToUL(), dinst.ops[0].size, dinst.ops[1].size, m_newBlock.jumpTableSize);
             m_jumpTableState = 0;
         }
     }
@@ -167,7 +168,8 @@ void BasicBlockAnalyzer::CheckForJumpTableLimitCheck(const _CodeInfo &ci, Rva va
         if (dinst.opcode == I_JA)
         {
             ++m_newBlock.jumpTableSize;
-            printf("jump table? %lx - %d\n", a.ToUL(), m_newBlock.jumpTableSize);
+            if (m_verbose)
+                printf("jump table? %lx - %d\n", a.ToUL(), m_newBlock.jumpTableSize);
             m_jumpTableState = 1;
         }
         else
@@ -184,7 +186,8 @@ bool BasicBlockAnalyzer::GatherNewTargets(const _CodeInfo &ci, Rva va, const _DI
 
     if ((dinst.flags & FLAG_DST_WR) != 0 && dinst.ops[0].type == O_REG && dinst.ops[0].index == m_newBlock.baseReg && m_newBlock.baseRegClobbered == 0)
     { 
-        printf("Clobber! %lx - %d at %lx\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet, a.ToUL());
+        if (m_verbose)
+            printf("Clobber! %lx - %d at %lx\n", m_newBlock.start.ToUL(), m_newBlock.baseRegSet, a.ToUL());
         if (a == m_newBlock.start)
         {
             m_newBlock.baseReg = R_NONE;

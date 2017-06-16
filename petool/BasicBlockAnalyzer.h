@@ -31,6 +31,10 @@ public:
     {
         return m_possibleVTables;
     }
+    void SetVerbose(bool verbose)
+    {
+        m_verbose = verbose;
+    }
 private:
     bool GatherNewTargets(const _CodeInfo &ci, Rva va, const _DInst dinst);
     bool CheckBaseRegLifetime(BasicBlock *bb, const _CodeInfo &ci, Rva va, const _DInst dinst);
@@ -58,4 +62,5 @@ private:
     int m_jumpTableState;
     unsigned long jumpTableSize;
     DWORD m_splitAt;
+    bool m_verbose = false;
 };

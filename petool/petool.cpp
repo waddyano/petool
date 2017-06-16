@@ -233,7 +233,7 @@ public:
 
             if (isOrdinal)
             {
-                printf("Ordinal: %llu\n", ClearTopBit(thunkData->u1.AddressOfData));
+                printf("  Ordinal: %llu\n", ClearTopBit(thunkData->u1.AddressOfData));
             }
             else
             {
@@ -243,9 +243,8 @@ public:
                     printf("bad iin!\n");
                     return;
                 }
-			    printf("%lx iin va %lx to %lx - %x %s - %s off %x\n", va.ToUL(), (DWORD)thunkData->u1.AddressOfData, 
-                    ((DWORD)thunkData->u1.AddressOfData + (DWORD)sizeof(IMAGE_IMPORT_BY_NAME) + (DWORD)strlen(iin->Name) + 1) & ~1,
-                    iin->Hint, iin->Name, Rva2Section(Rva(thunkData->u1.AddressOfData))->Name, Rva2Offset(Rva(thunkData->u1.AddressOfData)));
+			    printf("  %s %lx %x va %lx in %s\n", iin->Name, va.ToUL(), iin->Hint, (DWORD)thunkData->u1.AddressOfData, 
+                    Rva2Section(Rva(thunkData->u1.AddressOfData))->Name);
             }
 			++thunkData;
             va += sizeof(*thunkData);
@@ -786,6 +785,7 @@ public:
             }
 
             BasicBlockAnalyzer analyzer(Rva2Ptr<unsigned char>(textVa), textVa, textSize, m_relocations);
+            analyzer.SetVerbose(m_options.Verbose);
 
             bool first = true;
             Rva indirectThrowException;
@@ -1242,10 +1242,11 @@ public:
             DoDisassemble();
         }
 
-        if (m_options.PrintImports)
+        if (m_options.PrintImports || m_options.PrintImportedDLLs)
         { 
             PrintImports();
-		    PrintIAT();
+            if (m_options.Verbose)
+		        PrintIAT();
         }
 
         if (m_options.Verbose)
@@ -1267,6 +1268,7 @@ public:
 
     void PrintImports()
     {
+        PrintDelayImports();
         if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size == 0)
             return;
 
@@ -1277,23 +1279,56 @@ public:
         DWORD off = 0;
 		while (desc->Name != 0)
 		{
-            printf("IID %x - orig %x ft %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + off, desc->OriginalFirstThunk, desc->FirstThunk);
 			char *name = Rva2Ptr<char>(desc->Name);
-            printf("Name RVA %x to %x\n", desc->Name, (desc->Name + (DWORD)strlen(name) + 2) & ~1);
 
-			printf("Name %s, %s, forwarder %d\n", name, Rva2Section(desc->Name)->Name, desc->ForwarderChain);
+            if (m_options.PrintImportedDLLs)
+            {
+                printf("%s\n", name);
+            }
+            else
+            {
+                printf("IID %x - orig %x ft %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + off, desc->OriginalFirstThunk, desc->FirstThunk);
 
-			printf("Original %lx => %lx, %s\n", desc->OriginalFirstThunk, Rva2Offset(desc->OriginalFirstThunk), Rva2Section(desc->OriginalFirstThunk)->Name);
-            if (desc->OriginalFirstThunk != 0)
-				PrintThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
-			printf("IAT %lx => %lx, %s\n", desc->FirstThunk, Rva2Offset(desc->FirstThunk), Rva2Section(desc->FirstThunk)->Name);
-            if (desc->FirstThunk != 0)
-				PrintThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
+                printf("Name %s, %s, forwarder %d, Original %lx => %lx, %s\n", name, Rva2Section(desc->Name)->Name, desc->ForwarderChain,
+                    desc->OriginalFirstThunk, Rva2Offset(desc->OriginalFirstThunk), Rva2Section(desc->OriginalFirstThunk)->Name);
+
+                if (desc->OriginalFirstThunk != 0 && m_options.Verbose)
+                    PrintThunkData(Rva(desc->OriginalFirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->OriginalFirstThunk));
+
+                printf("IAT %lx => %lx, %s\n", desc->FirstThunk, Rva2Offset(desc->FirstThunk), Rva2Section(desc->FirstThunk)->Name);
+                if (desc->FirstThunk != 0)
+                    PrintThunkData(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
+                printf("\n");
+            }
+
 			++desc;
             off+=sizeof(*desc);
 		}
-        printf("Imports at end at %x\n", (DWORD)((desc + 1 - descs) * sizeof(IMAGE_IMPORT_DESCRIPTOR)) + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
         printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size);
+    }
+
+    void PrintDelayImports()
+    {
+        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].Size == 0)
+            return;
+
+	    printf("DelayImports at %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+        IMAGE_DELAYLOAD_DESCRIPTOR *descs = Rva2Ptr<IMAGE_DELAYLOAD_DESCRIPTOR>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+
+		IMAGE_DELAYLOAD_DESCRIPTOR *desc = descs;
+		while (desc->DllNameRVA != 0)
+		{
+			char *name = Rva2Ptr<char>(desc->DllNameRVA);
+            if (m_options.PrintImportedDLLs)                
+                printf("%s\n", name);
+            else
+                printf("Name %s\n", name);
+            if (desc->ImportNameTableRVA != 0 && m_options.PrintImports)
+                PrintThunkData(Rva(desc->ImportNameTableRVA), Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
+
+            ++desc;
+		}
+        printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].Size);
     }
 
     void PrintFunctionTable()
@@ -1957,6 +1992,8 @@ int main(int argc, char *argv[])
                 options.Verbose = true;
             else if (strcmp(argv[i], "-imports") == 0)
                 options.PrintImports = true;
+            else if (strcmp(argv[i], "-imported_dlls") == 0)
+                options.PrintImportedDLLs = true;
             else if (strcmp(argv[i], "-fix") == 0)
                 options.FixedAddress = true;
             else if (strcmp(argv[i], "-out") == 0)
