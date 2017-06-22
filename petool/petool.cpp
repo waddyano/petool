@@ -301,7 +301,6 @@ public:
 		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size != 0)
 		{
 			IMAGE_EXPORT_DIRECTORY *exports = Rva2Ptr<IMAGE_EXPORT_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-			DWORD nameAddr = exports->AddressOfNames;
 			DWORD *addressOfNames = Rva2Ptr<DWORD>(exports->AddressOfNames);
 			DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
 			for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
@@ -309,6 +308,21 @@ public:
 				char *name = Rva2Ptr<char>(addressOfNames[i]);
 				//printf("%s %lx\n", name, addressOfFunctions[i]);
 				m_exportedSymbols.insert(std::make_pair(Rva(addressOfFunctions[i]), name));
+			}
+		}
+	}
+
+    void PrintExports()
+	{
+		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size != 0)
+		{
+			IMAGE_EXPORT_DIRECTORY *exports = Rva2Ptr<IMAGE_EXPORT_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+			DWORD *addressOfNames = Rva2Ptr<DWORD>(exports->AddressOfNames);
+			DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
+			for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
+			{
+				char *name = Rva2Ptr<char>(addressOfNames[i]);
+				printf("%s %lx\n", name, addressOfFunctions[i]);
 			}
 		}
 	}
@@ -1249,6 +1263,11 @@ public:
 		        PrintIAT();
         }
 
+        if (m_options.PrintExports)
+        {
+            PrintExports();
+        }
+
         if (m_options.Verbose)
         {
             PrintLoadConfig();
@@ -1992,6 +2011,8 @@ int main(int argc, char *argv[])
                 options.Verbose = true;
             else if (strcmp(argv[i], "-imports") == 0)
                 options.PrintImports = true;
+            else if (strcmp(argv[i], "-exports") == 0)
+                options.PrintExports = true;
             else if (strcmp(argv[i], "-imported_dlls") == 0)
                 options.PrintImportedDLLs = true;
             else if (strcmp(argv[i], "-fix") == 0)
@@ -2011,6 +2032,10 @@ int main(int argc, char *argv[])
                     out_directory = argv[i + 1];
                     ++i;
                 }
+            }
+            else
+            {
+                fprintf(stderr, "unrecognised command line switch: %s\n", argv[i]);
             }
         }
         else

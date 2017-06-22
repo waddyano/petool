@@ -8,6 +8,7 @@ public:
     }
 
     bool Disassemble = false;
+    bool PrintExports = false;
     bool PrintImports = false;
     bool PrintImportedDLLs = false;
     bool Verbose = false;
