@@ -63,7 +63,9 @@ namespace Utils
             Options |= SYMOPT_DEBUG; 
             ::SymSetOptions( Options ); 
 
-            m_initialized = ::SymInitialize( GetCurrentProcess(), NULL, TRUE) != 0;
+            WCHAR path[4096];
+            GetEnvironmentVariableW(L"PATH", path, sizeof(path)/sizeof(path[0]));
+            m_initialized = ::SymInitializeW( GetCurrentProcess(), path, TRUE) != 0;
         }
 
         const char *LookupSymbol(DWORD64 addr)

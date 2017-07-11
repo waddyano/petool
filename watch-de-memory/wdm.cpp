@@ -43,7 +43,7 @@ static void printStack()
     for (ULONG i = 0; i < depth; ++i)
     { 
         const char *sym = symHandler.LookupSymbol(traceback[i]);
-        printf("%2lu: %12llx: %s\n", i, traceback[i], sym != nullptr ? sym : "?");
+        write_console("%2lu: %12llx: %s\n", i, traceback[i], sym != nullptr ? sym : "?");
     }
 }
 
