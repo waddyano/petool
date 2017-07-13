@@ -158,6 +158,7 @@
     <ClInclude Include="ConfigFile.h" />
     <ClInclude Include="Disassemble.h" />
     <ClInclude Include="Exception.h" />
+    <ClInclude Include="Imports.h" />
     <ClInclude Include="Options.h" />
     <ClInclude Include="RTTI.h" />
     <ClInclude Include="Rva.h" />

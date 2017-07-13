@@ -19,6 +19,7 @@
 #include "ConfigFile.h"
 #include "Disassemble.h"
 #include "Exception.h"
+#include "Imports.h"
 #include "Options.h"
 #include "RTTI.h"
 #include "Rva.h"
@@ -251,8 +252,10 @@ public:
 		}
 	}
 
-	void GatherImportedSymbols(Rva va, IMAGE_THUNK_DATA *thunkData)
+	void GatherImportedSymbols(Rva va, const char *dllName, IMAGE_THUNK_DATA *thunkData)
 	{
+        ImportedDLL *importedDLL = m_importedDLLs.AddImportedDLL(dllName);
+
 		while (thunkData->u1.AddressOfData != 0)
 		{
            bool isOrdinal = GetTopBit(thunkData->u1.AddressOfData);
@@ -262,8 +265,9 @@ public:
                 char tmp[32];
                 snprintf(tmp, sizeof(tmp), "Ordinal %llu", ClearTopBit(thunkData->u1.AddressOfData));
     			//printf("Imported %016llx %s\n", m_imageBase + va, n);
-			    m_vaToImportedSymbols.insert(std::make_pair(va, tmp));
-                m_importedSymbols.insert(std::make_pair(tmp, va));
+                m_importedDLLs.AddImportedSymbol(importedDLL, tmp, va);
+			    //m_vaToImportedSymbols.insert(std::make_pair(va, tmp));
+                //m_importedSymbols.insert(std::make_pair(tmp, va));
             }
             else
             {
@@ -273,10 +277,12 @@ public:
                     printf("bad iin!\n");
                     return;
                 }
-			    m_vaToImportedSymbols.insert(std::make_pair(va, iin->Name));
-                m_importedSymbols.insert(std::make_pair(iin->Name, va));
+                m_importedDLLs.AddImportedSymbol(importedDLL, iin->Name, va);
+			    //m_vaToImportedSymbols.insert(std::make_pair(va, iin->Name));
+                //m_importedSymbols.insert(std::make_pair(iin->Name, va));
     			//printf("Imported %016llx %s\n", m_imageBase + va, iin->Name);
             }
+
 			++thunkData;
 			va += sizeof(IMAGE_THUNK_DATA);
 		}
@@ -290,7 +296,7 @@ public:
 			IMAGE_IMPORT_DESCRIPTOR *desc = descs;
 			while (desc->Name != 0)
 			{
-				GatherImportedSymbols(Rva(desc->FirstThunk), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
+				GatherImportedSymbols(Rva(desc->FirstThunk), Rva2Ptr<const char>(desc->Name), Rva2Ptr<IMAGE_THUNK_DATA>(desc->FirstThunk));
 				++desc;
 			}
 		}
@@ -647,9 +653,12 @@ public:
 					//printf(" %s%u.", ToString(it->second.targetType), it->second.label);
                     printf(" %s", t->GetLabel().c_str());
 
-				auto importIt = m_vaToImportedSymbols.find(target);
-				if (importIt != m_vaToImportedSymbols.end())
-					printf(" %s", importIt->second.c_str());
+                const char * symbol = m_importedDLLs.Find(target);
+                if (symbol != nullptr)
+					printf(" %s", symbol);
+				//auto importIt = m_vaToImportedSymbols.find(target);
+				//if (importIt != m_vaToImportedSymbols.end())
+					//printf(" %s", importIt->second.c_str());
 
                 auto section = Rva2Section(target);
                 if (section != &dummySection && !IsExecutable(*section) && !IsWritable(*section))
@@ -768,11 +777,13 @@ public:
 
 		GatherImportedSymbols();
 
+#if 0
         auto it = m_importedSymbols.find("_CxxThrowException");
         if (it != m_importedSymbols.end())
         {
             printf("throws exception! %lx\n", it->second.ToUL());
         }
+#endif
 
 		GatherExportedSymbols();
 
@@ -1014,10 +1025,12 @@ public:
         if (dinst.opcode == I_JMP && (dinst.flags & FLAG_RIP_RELATIVE) != 0 && dinst.ops[0].type == O_SMEM)
         {
 			Rva target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
-            auto it = m_vaToImportedSymbols.find(target);
-            if (it != m_vaToImportedSymbols.end())
+            //auto it = m_vaToImportedSymbols.find(target);
+            //if (it != m_vaToImportedSymbols.end())
+            const char *symbol = m_importedDLLs.Find(target);
+            if (symbol != nullptr)
             {
-                b->label = it->second + "*";
+                b->label = std::string(symbol) + "*";
             }
         }
 
@@ -1829,11 +1842,18 @@ public:
             for (unsigned int i = 0; i < nSymbols; ++i)
             {
                 f->u1.AddressOfData = of->u1.AddressOfData;
+                Rva origVa = m_importedDLLs.Find(symbols[i]);
+                if (!origVa.IsZero())
+                {
+                    m_replacementVas.insert(std::make_pair(origVa, replacement));
+                }
+#if 0
                 auto it = m_importedSymbols.find(symbols[i]);
                 if (it != m_importedSymbols.end())
                 {
                     m_replacementVas.insert(std::make_pair(it->second, replacement));
                 }
+#endif
                 replacement += sizeof(IMAGE_THUNK_DATA);
                 ++f;
                 ++of;
@@ -1983,8 +2003,9 @@ private:
     int m_lastOperandOffset;
     std::vector<Insertion> m_insertions;
     std::unordered_map<Rva, Rva> m_replacementVas;
-	std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
-	std::unordered_map<std::string, Rva> m_importedSymbols;
+	//std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
+	//std::unordered_map<std::string, Rva> m_importedSymbols;
+    ImportedDLLs m_importedDLLs;
 	std::unordered_map<Rva, std::string> m_exportedSymbols;
     Options m_options;
 };
