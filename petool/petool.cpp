@@ -266,8 +266,6 @@ public:
                 snprintf(tmp, sizeof(tmp), "Ordinal %llu", ClearTopBit(thunkData->u1.AddressOfData));
     			//printf("Imported %016llx %s\n", m_imageBase + va, n);
                 m_importedDLLs.AddImportedSymbol(importedDLL, tmp, va);
-			    //m_vaToImportedSymbols.insert(std::make_pair(va, tmp));
-                //m_importedSymbols.insert(std::make_pair(tmp, va));
             }
             else
             {
@@ -278,8 +276,6 @@ public:
                     return;
                 }
                 m_importedDLLs.AddImportedSymbol(importedDLL, iin->Name, va);
-			    //m_vaToImportedSymbols.insert(std::make_pair(va, iin->Name));
-                //m_importedSymbols.insert(std::make_pair(iin->Name, va));
     			//printf("Imported %016llx %s\n", m_imageBase + va, iin->Name);
             }
 
@@ -313,7 +309,7 @@ public:
 		while (desc->DllNameRVA != 0)
 		{
 			char *name = Rva2Ptr<char>(desc->DllNameRVA);
-            GatherImportedSymbols(Rva(desc->ImportNameTableRVA), Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
+            GatherImportedSymbols(Rva(desc->ImportNameTableRVA), name, Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
 
             ++desc;
 		}
@@ -674,9 +670,6 @@ public:
                 const char * symbol = m_importedDLLs.Find(target);
                 if (symbol != nullptr)
 					printf(" %s", symbol);
-				//auto importIt = m_vaToImportedSymbols.find(target);
-				//if (importIt != m_vaToImportedSymbols.end())
-					//printf(" %s", importIt->second.c_str());
 
                 auto section = Rva2Section(target);
                 if (section != &dummySection && !IsExecutable(*section) && !IsWritable(*section))
@@ -1066,8 +1059,6 @@ public:
         if (dinst.opcode == I_JMP && (dinst.flags & FLAG_RIP_RELATIVE) != 0 && dinst.ops[0].type == O_SMEM)
         {
 			Rva target = va + INSTRUCTION_GET_RIP_TARGET(&dinst);
-            //auto it = m_vaToImportedSymbols.find(target);
-            //if (it != m_vaToImportedSymbols.end())
             const char *symbol = m_importedDLLs.Find(target);
             if (symbol != nullptr)
             {
@@ -2053,8 +2044,6 @@ private:
     int m_lastOperandOffset;
     std::vector<Insertion> m_insertions;
     std::unordered_map<Rva, Rva> m_replacementVas;
-	//std::unordered_map<Rva, std::string> m_vaToImportedSymbols;
-	//std::unordered_map<std::string, Rva> m_importedSymbols;
     ImportedDLLs m_importedDLLs;
 	std::unordered_map<Rva, std::string> m_exportedSymbols;
     Options m_options;
