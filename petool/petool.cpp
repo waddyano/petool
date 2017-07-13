@@ -302,6 +302,24 @@ public:
 		}
 	}
 
+    void GatherDelayImportedSymbols()
+    {
+        if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].Size == 0)
+            return;
+
+        IMAGE_DELAYLOAD_DESCRIPTOR *descs = Rva2Ptr<IMAGE_DELAYLOAD_DESCRIPTOR>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+
+		IMAGE_DELAYLOAD_DESCRIPTOR *desc = descs;
+		while (desc->DllNameRVA != 0)
+		{
+			char *name = Rva2Ptr<char>(desc->DllNameRVA);
+            GatherImportedSymbols(Rva(desc->ImportNameTableRVA), Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
+
+            ++desc;
+		}
+    }
+
+
 	void GatherExportedSymbols()
 	{
 		if (m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size != 0)
@@ -776,6 +794,7 @@ public:
         m_basicBlocks.clear();
 
 		GatherImportedSymbols();
+        GatherDelayImportedSymbols();
 
 #if 0
         auto it = m_importedSymbols.find("_CxxThrowException");
@@ -873,16 +892,21 @@ public:
                             }
                         }
 
-                        printf("catchable %x\n", ti->catchableTypeArrayOffset);
+                        if (m_options.Verbose)                      
+                            printf("catchable %x\n", ti->catchableTypeArrayOffset);
                         m_dataToAdjust.insert(throwInfo + offsetof(ThrowInfo, catchableTypeArrayOffset));
                         CatchableTypeArray *cta = Rva2Ptr<CatchableTypeArray>(ti->catchableTypeArrayOffset);
-                        printf("array length %u\n", cta->count);
+                        if (m_options.Verbose)
+                            printf("array length %u\n", cta->count);
                         for (unsigned int i = 0; i < cta->count; ++i)
                         {
-                            printf("%u\n", cta->catchableTypeOffsets[i]);
+                            if (m_options.Verbose)
+                                printf("%u\n", cta->catchableTypeOffsets[i]);
+
                             m_dataToAdjust.insert(Rva(ti->catchableTypeArrayOffset + offsetof(CatchableTypeArray, catchableTypeOffsets) + i * sizeof(unsigned int)));
                             CatchableType *ct = Rva2Ptr<CatchableType>(cta->catchableTypeOffsets[i]);
-                            printf("ct %u tdo %x %u %u %u copy %x\n", ct->a, ct->typeDescriptorOffset, ct->c, ct->d, ct->e, ct->copyConstructorOffset);
+                            if (m_options.Verbose)
+                                printf("ct %u tdo %x %u %u %u copy %x\n", ct->a, ct->typeDescriptorOffset, ct->c, ct->d, ct->e, ct->copyConstructorOffset);
                             if (ct->copyConstructorOffset != 0)
                             {
                                 Rva va((unsigned long)ct->copyConstructorOffset);
@@ -897,7 +921,8 @@ public:
                             {
                                 m_dataToAdjust.insert(Rva(cta->catchableTypeOffsets[i] + offsetof(CatchableType, typeDescriptorOffset)));
                                 auto descriptor = Rva2Ptr<RTTITypeDescriptor>(ct->typeDescriptorOffset);
-                                printf("name %s\n", descriptor->name);
+                                if (m_options.Verbose)
+                                    printf("name %s\n", descriptor->name);
                             }
                         }
                     }
@@ -923,7 +948,8 @@ public:
             for (auto vt : analyzer.GetPossibleVtables())
             {
                 auto loc1 = Rva2Ptr<uint64_t >(vt - 8);
-                printf("check vt %lx\n", vt.ToUL());
+                if (m_options.Verbose)
+                    printf("check vt %lx\n", vt.ToUL());
                 auto loc2 = Rva2Ptr<uint64_t >(vt);
                 auto s1 = Rva2Section((unsigned long)(*loc1 - m_imageBase));
                 auto s2 = Rva2Section((unsigned long)(*loc2 - m_imageBase));
@@ -931,29 +957,42 @@ public:
                 {
                     unsigned long locatorOffset = (unsigned long)(*loc1 - m_imageBase);
                     auto locator = Rva2Ptr<RTTIObjectLocator>(locatorOffset);
-                    printf("locator offs %lu %lu\n", locatorOffset, locator->selfOffset);
+
+                    if (m_options.Verbose)
+                        printf("locator offs %lu %lu\n", locatorOffset, locator->selfOffset);
                     if (locatorOffset == locator->selfOffset)
                     {
                         m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, typeDescriptorOffset)));
                         m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, classHierarchyDescriptorOffset)));
                         m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, selfOffset)));
-                        printf("locator tdo %lx - offsets %lx %lx\n", locator->typeDescriptorOffset, locatorOffset, locator->selfOffset);
+
+                        if (m_options.Verbose)
+                            printf("locator tdo %lx - offsets %lx %lx\n", locator->typeDescriptorOffset, locatorOffset, locator->selfOffset);
+
                         auto descriptor = Rva2Ptr<RTTITypeDescriptor>(locator->typeDescriptorOffset);
-                        printf("desc name %s\n", descriptor->name);
+
+                        if (m_options.Verbose)
+                            printf("desc name %s\n", descriptor->name);
+
                         auto base = Rva2Ptr<RTTIClassHierarchyDescriptor>(locator->classHierarchyDescriptorOffset);
                         auto bases = Rva2Ptr<unsigned int>(base->baseClassArrayOffset);
                         m_dataToAdjust.insert(Rva(locator->classHierarchyDescriptorOffset + offsetof(RTTIClassHierarchyDescriptor, baseClassArrayOffset)));
                         for (unsigned int i = 0; i < base->arrayLength; ++i)
                         {
-                            printf("  base: %lx ", bases[i]);
+                            if (m_options.Verbose)
+                                printf("  base: %lx ", bases[i]);
                             auto x = Rva2Ptr<RTTIBaseClassDescriptor>(bases[i]);
                             m_dataToAdjust.insert(Rva(base->baseClassArrayOffset + i * sizeof(unsigned int)));
-                            printf("chd %lx ", x->classHierarchyDescriptorOffset);
-                            printf("tdo %lx\n", x->typeDescriptorOffset);
+                            if (m_options.Verbose)
+                            {
+                                printf("chd %lx ", x->classHierarchyDescriptorOffset);
+                                printf("tdo %lx\n", x->typeDescriptorOffset);
+                            }
                             m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, classHierarchyDescriptorOffset)));
                             m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, typeDescriptorOffset)));
                             auto baseDescriptor = Rva2Ptr<RTTITypeDescriptor>(x->typeDescriptorOffset);
-                            printf("  base name %s\n", baseDescriptor->name);
+                            if (m_options.Verbose)
+                                printf("  base name %s\n", baseDescriptor->name);
                         }
                     }
                 }
@@ -987,14 +1026,16 @@ public:
                         }
                         if (xd != nullptr)
                         {
-                            printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
+                            if (m_options.Verbose)
+                                printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
                             auto tm = Rva2Ptr<TryMap>(xd->tryMapOffset);
                             if (tm != nullptr)
                             {
                                 auto hm = Rva2Ptr<HandlerMap>(tm->handlerMapOffset);
                                 for (unsigned int j = 0; j < tm->handlerMapCount; ++j)
                                 {
-                                    printf("handler map %u: tdo %lx catch fn %lx\n", j, hm[j].typeDescriptorOffset, hm[j].catchFunctionOffset);
+                                    if (m_options.Verbose)
+                                        printf("handler map %u: tdo %lx catch fn %lx\n", j, hm[j].typeDescriptorOffset, hm[j].catchFunctionOffset);
                                     m_dataToAdjust.insert(Rva(tm->handlerMapOffset + offsetof(HandlerMap, typeDescriptorOffset) + j * sizeof(HandlerMap)));
                                 }
                             }
@@ -1357,6 +1398,13 @@ public:
                 printf("Name %s\n", name);
             if (desc->ImportNameTableRVA != 0 && m_options.PrintImports)
                 PrintThunkData(Rva(desc->ImportNameTableRVA), Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
+            printf("iat %x module %x\n", desc->ImportAddressTableRVA, desc->ModuleHandleRVA);
+            if (desc->ImportAddressTableRVA != 0 && m_options.PrintImports)
+            {
+                uint64_t *a = Rva2Ptr<uint64_t>(desc->ImportAddressTableRVA);
+                for (int i = 0; a[i] != 0; ++i)
+                    printf("%llx\n", a[i]);
+            }
 
             ++desc;
 		}
@@ -1652,7 +1700,8 @@ public:
                 if (AdjustRva(&va))
                 {
     				char *name = Rva2Ptr<char>(addressOfNames[i]);
-                    printf("Adjusted export! %s %lx\n", name, va.ToUL());
+                    if (m_options.Verbose)
+                        printf("Adjusted export! %s %lx\n", name, va.ToUL());
                     addressOfFunctions[i] = va.ToUL();
                 }
 			}
@@ -1699,7 +1748,8 @@ public:
             Rva tt = Rva(*Rva2Ptr<unsigned long>(t));
             if (AdjustRva(&tt))
             {
-                printf("adjusting %lx to %lx: %lx tp %lx\n", v.ToUL(), t.ToUL(), *Rva2Ptr<unsigned long>(t), tt.ToUL());
+                if (m_options.Verbose)
+                    printf("adjusting %lx to %lx: %lx tp %lx\n", v.ToUL(), t.ToUL(), *Rva2Ptr<unsigned long>(t), tt.ToUL());
                 *Rva2Ptr<unsigned long>(t) = tt.ToUL();
             }
         }
