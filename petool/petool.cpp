@@ -254,7 +254,7 @@ public:
 
 	void GatherImportedSymbols(Rva va, const char *dllName, IMAGE_THUNK_DATA *thunkData)
 	{
-        ImportedDLL *importedDLL = m_importedDLLs.AddImportedDLL(dllName);
+        ImportedDLL *importedDLL = m_importedDLLs.AddImportedDLL(dllName, false);
 
 		while (thunkData->u1.AddressOfData != 0)
 		{
@@ -308,8 +308,25 @@ public:
 		IMAGE_DELAYLOAD_DESCRIPTOR *desc = descs;
 		while (desc->DllNameRVA != 0)
 		{
-			char *name = Rva2Ptr<char>(desc->DllNameRVA);
-            GatherImportedSymbols(Rva(desc->ImportNameTableRVA), name, Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA));
+			char *dllName = Rva2Ptr<char>(desc->DllNameRVA);
+            ImportedDLL *importedDLL = m_importedDLLs.AddImportedDLL(dllName, true);
+
+            if (desc->ImportAddressTableRVA != 0)
+            {
+                uint64_t *a = Rva2Ptr<uint64_t>(desc->ImportAddressTableRVA);
+                IMAGE_THUNK_DATA *thunks = Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA);
+                for (int i = 0; a[i] != 0; ++i)
+                { 
+                    IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(Rva(thunks[i].u1.AddressOfData));
+                    if (iin == nullptr)
+                    { 
+                        printf("bad iin\n");
+                        return;
+                    }
+
+                    m_importedDLLs.AddImportedSymbol(importedDLL, std::string(iin->Name) + " (delay)", Rva(desc->ImportAddressTableRVA + i * sizeof(uint64_t)));
+                }
+            }
 
             ++desc;
 		}
@@ -1393,8 +1410,16 @@ public:
             if (desc->ImportAddressTableRVA != 0 && m_options.PrintImports)
             {
                 uint64_t *a = Rva2Ptr<uint64_t>(desc->ImportAddressTableRVA);
+                IMAGE_THUNK_DATA *thunks = Rva2Ptr<IMAGE_THUNK_DATA>(desc->ImportNameTableRVA);
                 for (int i = 0; a[i] != 0; ++i)
-                    printf("%llx\n", a[i]);
+                { 
+                    IMAGE_IMPORT_BY_NAME *iin = Rva2Ptr<IMAGE_IMPORT_BY_NAME>(Rva(thunks[i].u1.AddressOfData));
+                    if (iin == nullptr)
+                        printf("bad iin\n");
+                    else
+                        printf("%s\n", iin->Name);
+                    printf("%zx: %llx\n", desc->ImportAddressTableRVA + i * sizeof(uint64_t), a[i]);
+                }
             }
 
             ++desc;
