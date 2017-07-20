@@ -1037,7 +1037,7 @@ public:
                         if (xd != nullptr)
                         {
                             if (m_options.Verbose)
-                                printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
+                                printf("xdata %lx %lx %lx %lx\n", xd->magic, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
                             auto tm = Rva2Ptr<TryMap>(xd->tryMapOffset);
                             if (tm != nullptr)
                             {
@@ -1317,6 +1317,10 @@ public:
         {
             DoDisassemble();
         }
+        else if (m_options.Verbose)
+        {
+            GatherAllTargets();
+        }
 
         if (m_options.PrintImports || m_options.PrintImportedDLLs)
         { 
@@ -1441,7 +1445,9 @@ public:
                 break;
             BasicBlock *beginbb = FindBasicBlock(Rva(entry.BeginAddress));
             if (beginbb != nullptr)
+            {
                 printf("begin %s\n", beginbb->GetLabel().c_str());
+            }
             printf("%08x %08x %08x\n", entry.BeginAddress, entry.EndAddress, entry.UnwindInfoAddress);
             auto s = Rva2Section(entry.UnwindInfoAddress);
             if (s != nullptr)
@@ -1463,6 +1469,7 @@ public:
                         }
                     }
                 }
+
                 if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
                 {
                     printf(" function %lx %lx %lx", ui->GetHandlerInfo().FunctionEntry.FunctionStartAddress, ui->GetHandlerInfo().FunctionEntry.FunctionEndAddress, ui->GetHandlerInfo().FunctionEntry.UnwindInfoAddress);
@@ -1470,7 +1477,7 @@ public:
                 printf("\n");
                 if (xd != nullptr)
                 {
-                    printf("xdata %lx %lx %lx %lx\n", xd->a, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset);
+                    printf("xdata %lx %lx %lx %lx EHflags %d\n", xd->magic, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset, xd->EHFlags);
                     auto um = Rva2Ptr<UnwindMap>(xd->unwindMapOffset);
                     if (um != nullptr)
                         printf("unwind destructor %lx\n", um->destructorOffset);

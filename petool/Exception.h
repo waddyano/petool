@@ -27,7 +27,7 @@ struct CatchableType
 
 struct XData
 {
-    unsigned int a;
+    unsigned int magic;
     unsigned int b;
     unsigned int unwindMapOffset;
     unsigned int d;
@@ -36,7 +36,7 @@ struct XData
     unsigned int stateOffset;
     unsigned int h;
     unsigned int i;
-    unsigned int j;
+    unsigned int EHFlags;
 };
 
 struct IP2Offset
