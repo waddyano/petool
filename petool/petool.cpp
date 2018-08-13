@@ -52,8 +52,8 @@ class PEFile
 public:
 	PEFile(const char *filename, const Options &options) : m_options(options)
 	{
-        memset(&dummySection, 0, sizeof(dummySection));
-        strcpy((char *)dummySection.Name, "**dum**");
+        memset(&m_dummySection, 0, sizeof(m_dummySection));
+        strcpy((char *)m_dummySection.Name, "**dum**");
 
 		FILE *fp = fopen(filename, "rb");
 
@@ -130,7 +130,7 @@ public:
   		return rva.ToUL() - sh->VirtualAddress + sh->PointerToRawData;
 	}
 
-    IMAGE_SECTION_HEADER dummySection;
+    IMAGE_SECTION_HEADER m_dummySection;
 
 	PIMAGE_SECTION_HEADER Rva2Section(unsigned long rva)
     {
@@ -141,7 +141,7 @@ public:
 	{
 		if (rva.ToUL() == 0)
 		{
-			return &dummySection;
+			return &m_dummySection;
 		}
 
 		SECTION *sh = &m_sections[0];
@@ -156,7 +156,7 @@ public:
 			++sh;
 		}
 
-		return &dummySection;
+		return &m_dummySection;
 	}
 
 	template <class T>
@@ -689,7 +689,7 @@ public:
 					printf(" %s", symbol);
 
                 auto section = Rva2Section(target);
-                if (section != &dummySection && !IsExecutable(*section) && !IsWritable(*section))
+                if (section != &m_dummySection && !IsExecutable(*section) && !IsWritable(*section))
                 {
                     char *s = Rva2Ptr<char>(target);
                     if (LooksLikeString(s))
@@ -717,48 +717,70 @@ public:
     {
 		IMAGE_DOS_HEADER *header = reinterpret_cast<IMAGE_DOS_HEADER *>(m_base);
 
+        IMAGE_FILE_HEADER *fileHeader;
+        bool isImage = false;
+
         if (header->e_magic != IMAGE_DOS_SIGNATURE)
-            ThrowBadFile("magic");
+        {
+            if (header->e_magic == IMAGE_FILE_MACHINE_AMD64)
+                fileHeader = reinterpret_cast<IMAGE_FILE_HEADER *>(header);
+            else
+                ThrowBadFile("magic");
+        }
+        else
+        {
+            if (header->e_lfanew < sizeof(IMAGE_DOS_HEADER) || header->e_lfanew > m_originalLength)
+                ThrowBadFile("e_lfanew");
 
-        if (header->e_lfanew < sizeof(IMAGE_DOS_HEADER) || header->e_lfanew > m_originalLength)
-            ThrowBadFile("e_lfanew");
+            DWORD *signature = reinterpret_cast<DWORD *>(m_base + header->e_lfanew);
 
-		DWORD *signature = reinterpret_cast<DWORD *>(m_base + header->e_lfanew);
-
-		IMAGE_FILE_HEADER *fileHeader = reinterpret_cast<IMAGE_FILE_HEADER *>(signature + 1);
+            isImage = true;
+            fileHeader = reinterpret_cast<IMAGE_FILE_HEADER *>(signature + 1);
+        }
 
         if (fileHeader->Machine != IMAGE_FILE_MACHINE_AMD64)
             ThrowBadFile("not 64 bit");
 
+        printf("Characteristics %x\n", fileHeader->Characteristics);
+
         if ((fileHeader->Characteristics & IMAGE_FILE_RELOCS_STRIPPED) != 0)
             ThrowBadFile("can not instrument .EXE stripped of relocations");
 
-		m_optionalHeader = reinterpret_cast<IMAGE_OPTIONAL_HEADER64 *>(fileHeader + 1);
+        m_nSections = fileHeader->NumberOfSections;
 
-        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA) != 0)
-            printf("High Entropy VA\n");
+        printf("Machine %x\n", fileHeader->Machine);
+        printf("# sections %d\n", fileHeader->NumberOfSections);
+        printf("sym tab %d\n", fileHeader->PointerToSymbolTable);
 
-        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) != 0)
-            printf("Dynamic Base\n");
+        if (isImage)
+        {
+            m_optionalHeader = reinterpret_cast<IMAGE_OPTIONAL_HEADER64 *>(fileHeader + 1);
 
-        if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_NX_COMPAT) != 0)
-            printf("NX Compat\n");
+            if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA) != 0)
+                printf("High Entropy VA\n");
 
-		printf("Machine %x\n", fileHeader->Machine);
-		printf("# sections %d\n", fileHeader->NumberOfSections);
-		printf("sym tab %d\n", fileHeader->PointerToSymbolTable);
-		printf("load address %llx\n", m_optionalHeader->ImageBase);
-		m_imageBase = m_optionalHeader->ImageBase;
-        m_newImageBase = m_options.FixedAddress ? 0x500000000 : m_imageBase;
-        printf("Entry %x\n", m_optionalHeader->AddressOfEntryPoint);
-        printf("SizeImage %lx SizeHeaders %lx\n", m_optionalHeader->SizeOfImage, m_optionalHeader->SizeOfHeaders);
+            if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) != 0)
+                printf("Dynamic Base\n");
 
-		m_nSections = fileHeader->NumberOfSections;
-		m_sectionHeaders = reinterpret_cast<PIMAGE_SECTION_HEADER>(m_optionalHeader + 1);
+            if (((m_optionalHeader->DllCharacteristics) & IMAGE_DLLCHARACTERISTICS_NX_COMPAT) != 0)
+                printf("NX Compat\n");
+            m_imageBase = m_optionalHeader->ImageBase;
+		    printf("load address %llx\n", m_optionalHeader->ImageBase);
+            m_newImageBase = m_options.FixedAddress ? 0x500000000 : m_imageBase;
+            printf("Entry %x\n", m_optionalHeader->AddressOfEntryPoint);
+            printf("SizeImage %lx SizeHeaders %lx\n", m_optionalHeader->SizeOfImage, m_optionalHeader->SizeOfHeaders);
+
+    		m_sectionHeaders = reinterpret_cast<PIMAGE_SECTION_HEADER>(m_optionalHeader + 1);
+        }
+        else
+        {
+            m_sectionHeaders = reinterpret_cast<PIMAGE_SECTION_HEADER>(fileHeader + 1);
+        }
 
         printf("Image Header %p => %p\n", m_base, m_sectionHeaders);
         printf("Sections %p => %p\n", m_sectionHeaders, m_sectionHeaders + m_nSections);
         printf("H+S size %zd\n", (unsigned char *)(m_sectionHeaders + m_nSections) - m_base);
+
         BuildSections(m_nSections, m_sectionHeaders);
 
         DumpDebugDirectory();
@@ -955,56 +977,13 @@ public:
                 }
             }
 
-            for (auto vt : analyzer.GetPossibleVtables())
+            if (!analyzer.GetPossibleVtables().empty())
             {
-                auto loc1 = Rva2Ptr<uint64_t >(vt - 8);
                 if (m_options.Verbose)
-                    printf("check vt %lx\n", vt.ToUL());
-                auto loc2 = Rva2Ptr<uint64_t >(vt);
-                auto s1 = Rva2Section((unsigned long)(*loc1 - m_imageBase));
-                auto s2 = Rva2Section((unsigned long)(*loc2 - m_imageBase));
-                if (!IsExecutable(*s1) && IsExecutable(*s2))
+                    printf("checking vtables\n");
+                for (auto vt : analyzer.GetPossibleVtables())
                 {
-                    unsigned long locatorOffset = (unsigned long)(*loc1 - m_imageBase);
-                    auto locator = Rva2Ptr<RTTIObjectLocator>(locatorOffset);
-
-                    if (m_options.Verbose)
-                        printf("locator offs %lu %lu\n", locatorOffset, locator->selfOffset);
-                    if (locatorOffset == locator->selfOffset)
-                    {
-                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, typeDescriptorOffset)));
-                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, classHierarchyDescriptorOffset)));
-                        m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, selfOffset)));
-
-                        if (m_options.Verbose)
-                            printf("locator tdo %lx - offsets %lx %lx\n", locator->typeDescriptorOffset, locatorOffset, locator->selfOffset);
-
-                        auto descriptor = Rva2Ptr<RTTITypeDescriptor>(locator->typeDescriptorOffset);
-
-                        if (m_options.Verbose)
-                            printf("desc name %s\n", descriptor->name);
-
-                        auto base = Rva2Ptr<RTTIClassHierarchyDescriptor>(locator->classHierarchyDescriptorOffset);
-                        auto bases = Rva2Ptr<unsigned int>(base->baseClassArrayOffset);
-                        m_dataToAdjust.insert(Rva(locator->classHierarchyDescriptorOffset + offsetof(RTTIClassHierarchyDescriptor, baseClassArrayOffset)));
-                        for (unsigned int i = 0; i < base->arrayLength; ++i)
-                        {
-                            if (m_options.Verbose)
-                                printf("  base: %lx ", bases[i]);
-                            auto x = Rva2Ptr<RTTIBaseClassDescriptor>(bases[i]);
-                            m_dataToAdjust.insert(Rva(base->baseClassArrayOffset + i * sizeof(unsigned int)));
-                            if (m_options.Verbose)
-                            {
-                                printf("chd %lx ", x->classHierarchyDescriptorOffset);
-                                printf("tdo %lx\n", x->typeDescriptorOffset);
-                            }
-                            m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, classHierarchyDescriptorOffset)));
-                            m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, typeDescriptorOffset)));
-                            auto baseDescriptor = Rva2Ptr<RTTITypeDescriptor>(x->typeDescriptorOffset);
-                            if (m_options.Verbose)
-                                printf("  base name %s\n", baseDescriptor->name);
-                        }
-                    }
+                    CheckForVTable(vt, false);
                 }
             }
 
@@ -1051,6 +1030,86 @@ public:
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    void FindVTables()
+    {
+        int rdataSection = FindSection(".rdata");
+
+        if (rdataSection < 0)
+        {
+            printf("No rdata\n");
+            return;
+        }
+
+        DWORD rdataVa = m_sectionHeaders[rdataSection].VirtualAddress;
+        DWORD rdataSize = m_sectionHeaders[rdataSection].SizeOfRawData;
+
+        for (DWORD i = 0; i < rdataSize; i += 8)
+        {
+            Rva va(rdataVa + i);
+            CheckForVTable(va, true);
+        }
+    }
+
+    void CheckForVTable(const Rva &vt, bool print)
+    {
+        auto loc1 = Rva2Ptr<uint64_t >(vt - 8);
+        if (loc1 == nullptr)
+            return;
+        auto loc2 = Rva2Ptr<uint64_t >(vt);
+        if (loc2 == nullptr)
+            return;
+        if (m_options.Verbose)
+            printf("check vt %lx\n", vt.ToUL());
+        auto s1 = Rva2Section((unsigned long)(*loc1 - m_imageBase));
+        auto s2 = Rva2Section((unsigned long)(*loc2 - m_imageBase));
+        if (!IsExecutable(*s1) && IsExecutable(*s2))
+        {
+            unsigned long locatorOffset = (unsigned long)(*loc1 - m_imageBase);
+            auto locator = Rva2Ptr<RTTIObjectLocator>(locatorOffset);
+
+            if (locator == nullptr)
+                return;
+
+            if (m_options.Verbose)
+                printf("locator offs %lu %lu\n", locatorOffset, locator->selfOffset);
+            if (locatorOffset == locator->selfOffset)
+            {
+                m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, typeDescriptorOffset)));
+                m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, classHierarchyDescriptorOffset)));
+                m_dataToAdjust.insert(Rva(locatorOffset + offsetof(RTTIObjectLocator, selfOffset)));
+
+                if (m_options.Verbose)
+                    printf("locator tdo %lx - offsets %lx %lx\n", locator->typeDescriptorOffset, locatorOffset, locator->selfOffset);
+
+                auto descriptor = Rva2Ptr<RTTITypeDescriptor>(locator->typeDescriptorOffset);
+
+                if (m_options.Verbose || print)
+                    printf("desc name %s\n", descriptor->name);
+
+                auto base = Rva2Ptr<RTTIClassHierarchyDescriptor>(locator->classHierarchyDescriptorOffset);
+                auto bases = Rva2Ptr<unsigned int>(base->baseClassArrayOffset);
+                m_dataToAdjust.insert(Rva(locator->classHierarchyDescriptorOffset + offsetof(RTTIClassHierarchyDescriptor, baseClassArrayOffset)));
+                for (unsigned int i = 0; i < base->arrayLength; ++i)
+                {
+                    if (m_options.Verbose)
+                        printf("  base: %lx ", bases[i]);
+                    auto x = Rva2Ptr<RTTIBaseClassDescriptor>(bases[i]);
+                    m_dataToAdjust.insert(Rva(base->baseClassArrayOffset + i * sizeof(unsigned int)));
+                    if (m_options.Verbose)
+                    {
+                        printf("chd %lx ", x->classHierarchyDescriptorOffset);
+                        printf("tdo %lx\n", x->typeDescriptorOffset);
+                    }
+                    m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, classHierarchyDescriptorOffset)));
+                    m_dataToAdjust.insert(Rva(bases[i] + offsetof(RTTIBaseClassDescriptor, typeDescriptorOffset)));
+                    auto baseDescriptor = Rva2Ptr<RTTITypeDescriptor>(x->typeDescriptorOffset);
+                    if (m_options.Verbose)
+                        printf("  base name %s\n", baseDescriptor->name);
                 }
             }
         }
@@ -1305,17 +1364,24 @@ public:
 
 	void Process()
 	{
-		for (int i = 0; i < 16; ++i)
-		{
-			const IMAGE_DATA_DIRECTORY &data = m_optionalHeader->DataDirectory[i];
-			printf(" %s Address %x Size %x %s\n", directoryNames[i], data.VirtualAddress, data.Size, data.VirtualAddress == 0 ? "" : (char *)Rva2Section(Rva(data.VirtualAddress))->Name);
-		}
+        if (m_options.PrintDirectories)
+        {
+            for (int i = 0; i < 16; ++i)
+            {
+                const IMAGE_DATA_DIRECTORY &data = m_optionalHeader->DataDirectory[i];
+                printf(" %s Address %x Size %x %s\n", directoryNames[i], data.VirtualAddress, data.Size, data.VirtualAddress == 0 ? "" : (char *)Rva2Section(Rva(data.VirtualAddress))->Name);
+            }
+        }
 
         PrintSections();
 
         if (m_options.Disassemble)
         {
             DoDisassemble();
+        }
+        else if (m_options.FindVTables)
+        {
+            FindVTables();
         }
         else if (m_options.Verbose)
         {
@@ -1334,7 +1400,7 @@ public:
             PrintExports();
         }
 
-        if (m_options.Verbose)
+        if (m_options.ExtraVerbose)
         {
             PrintLoadConfig();
             PrintTLS();
@@ -2081,26 +2147,35 @@ private:
     Options m_options;
 };
 
-int main(int argc, char *argv[])
+static int protectedMain(int argc, char *argv[])
 {
     Options options;
     std::vector<const char *> filenames;
     const char *out_filename = nullptr;
     const char *out_directory = nullptr;
 
-    ConfigFile f("test.toml");
-    f.Load();
+    //ConfigFile f("test.toml");
+    //f.Load();
 
     for (int i = 1; i < argc; ++i)
     {
         if (argv[i][0] == '-')
         {
-            if (strcmp(argv[i], "-dis") == 0)
+            if (strcmp(argv[i], "-help") == 0)
+            {
+                printf("options: -dis, -vtable, -edit, -v, -ev, -imports, -exports, -imported_dlls, -fix, -out, -outd\n");
+                exit(EXIT_FAILURE);
+            }
+            else if (strcmp(argv[i], "-dis") == 0)
                 options.Disassemble = true;
+            else if (strcmp(argv[i], "-vtable") == 0)
+                options.FindVTables = true;
             else if (strcmp(argv[i], "-edit") == 0)
                 options.Edit = true;
             else if (strcmp(argv[i], "-v") == 0)
                 options.Verbose = true;
+            else if (strcmp(argv[i], "-ev") == 0)
+                options.ExtraVerbose = true;
             else if (strcmp(argv[i], "-imports") == 0)
                 options.PrintImports = true;
             else if (strcmp(argv[i], "-exports") == 0)
@@ -2197,4 +2272,17 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
 
     return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    try
+    {
+        protectedMain(argc, argv);
+    }
+    catch (...)
+    {
+        fprintf(stderr, "catastrophe!\n");
+        exit(EXIT_FAILURE);
+    }
 }
