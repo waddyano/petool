@@ -339,12 +339,12 @@ public:
 		{
 			IMAGE_EXPORT_DIRECTORY *exports = Rva2Ptr<IMAGE_EXPORT_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 			DWORD *addressOfNames = Rva2Ptr<DWORD>(exports->AddressOfNames);
-			DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
-			for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
+            DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
+            WORD *addressOfNameOrdinals = Rva2Ptr<WORD>(exports->AddressOfNameOrdinals);
+            for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
 			{
 				char *name = Rva2Ptr<char>(addressOfNames[i]);
-				//printf("%s %lx\n", name, addressOfFunctions[i]);
-				m_exportedSymbols.insert(std::make_pair(Rva(addressOfFunctions[i]), name));
+				m_exportedSymbols.insert(std::make_pair(Rva(addressOfFunctions[addressOfNameOrdinals[i]]), name));
 			}
 		}
 	}
@@ -356,10 +356,11 @@ public:
 			IMAGE_EXPORT_DIRECTORY *exports = Rva2Ptr<IMAGE_EXPORT_DIRECTORY>(m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 			DWORD *addressOfNames = Rva2Ptr<DWORD>(exports->AddressOfNames);
 			DWORD *addressOfFunctions = Rva2Ptr<DWORD>(exports->AddressOfFunctions);
+            WORD *addressOfNameOrdinals = Rva2Ptr<WORD>(exports->AddressOfNameOrdinals);
 			for (unsigned int i = 0; i < exports->NumberOfNames; ++i)
 			{
 				char *name = Rva2Ptr<char>(addressOfNames[i]);
-				printf("%s %lx\n", name, addressOfFunctions[i]);
+				printf("%s %x %lx\n", name, addressOfNameOrdinals[i], addressOfFunctions[addressOfNameOrdinals[i]]);
 			}
 		}
 	}

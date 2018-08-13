@@ -44,3 +44,4 @@
 *.obj
 *.lib
 /test-dll-exe/x64/Release
+v15
