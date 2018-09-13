@@ -8,14 +8,33 @@
 #define UNW_FLAG_UHANDLER 0x2
 #define UNW_FLAG_CHAININFO 0x4
 
-// UNWIND_INFO see https://msdn.microsoft.com/en-us/library/ddssxxy8.aspx
-// UNWIND_CODE see https://msdn.microsoft.com/en-us/library/ck9asaa9.aspx
+// UNWIND_INFO see https://docs.microsoft.com/en-us/cpp/build/struct-unwind-info?view=vs-2017
+// UNWIND_CODE see https://docs.microsoft.com/en-us/cpp/build/struct-unwind-code?view=vs-2017
+// More useful reference in coreclr e.g. https://github.com/dotnet/coreclr/blob/master/src/inc/win64unwind.h
 
-struct UNWIND_CODE
+enum class UWOP
+{  
+    PUSH_NONVOL = 0, /* info == register number */  
+    ALLOC_LARGE,     /* no info, alloc size in next 2 slots */  
+    ALLOC_SMALL,     /* info == size of allocation / 8 - 1 */  
+    SET_FPREG,       /* no info, FP = RSP + UNWIND_INFO.FPRegOffset*16 */  
+    SAVE_NONVOL,     /* info == register number, offset in next slot */  
+    SAVE_NONVOL_FAR, /* info == register number, offset in next 2 slots */  
+    SAVE_XMM128,     /* info == XMM reg number, offset in next slot */  
+    SAVE_XMM128_FAR, /* info == XMM reg number, offset in next 2 slots */  
+    PUSH_MACHFRAME   /* info == 0: no error-code, 1: error-code */  
+};
+
+union UNWIND_CODE
 {
-    BYTE Offset;
-    BYTE UnwindOperationCode : 4;
-    BYTE OperationInfo : 4;
+    struct 
+    {
+        BYTE CodeOffset;
+        BYTE UnwindOp : 4;
+        BYTE OpInfo : 4;
+    };
+
+    USHORT FrameOffset;
 };
 
 typedef struct UNWIND_INFO 

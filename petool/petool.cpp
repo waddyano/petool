@@ -47,6 +47,40 @@ static const char *directoryNames[] =
 	"??"
 };
 
+static const char *uwop_strings[] =
+{  
+    "PUSH_NONVOL",
+    "ALLOC_LARGE",
+    "ALLOC_SMALL",
+    "SET_FPREG",
+    "SAVE_NONVOL",
+    "SAVE_NONVOL_FAR",
+    "SAVE_XMM128",
+    "SAVE_XMM128_FAR",
+    "PUSH_MACHFRAME"
+};
+
+static const char * reg_strings[] =
+{
+    "rax",
+    "rcx",
+    "rdx",
+    "rbx",
+    "rsp",
+    "rbp",
+    "rsi",
+    "rdi",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15"
+};
+  
+
 class PEFile
 {
 public:
@@ -1498,6 +1532,55 @@ public:
         printf("Directory end %x\n", m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress + m_optionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].Size);
     }
 
+    void PrintUnwind(UNWIND_INFO *ui)
+    {
+        int i = 0;
+        while (i < ui->CountOfCodes)
+        {
+            UNWIND_CODE code = ui->UnwindCodes[i];
+            ++i;
+            if (code.UnwindOp > (int)UWOP::PUSH_MACHFRAME)
+            {
+                printf(" got lost\n");
+                break;
+            }
+            printf("%d: %s ", code.CodeOffset, uwop_strings[(int)code.UnwindOp]);
+            switch (code.UnwindOp)
+            {
+            case UWOP::PUSH_NONVOL:
+                printf("%s", reg_strings[code.OpInfo]);
+                break;
+            case UWOP::ALLOC_LARGE:
+                if (code.OpInfo == 0)
+                {
+                    printf("%d", 8 * ui->UnwindCodes[i].FrameOffset);
+                    ++i;
+                }
+                else
+                {
+                    unsigned int size = ui->UnwindCodes[i].FrameOffset | (ui->UnwindCodes[i + 1].FrameOffset << 16);
+                    printf("%u", size);
+                    i += 2;
+                }
+                break;
+            case UWOP::ALLOC_SMALL:
+                printf("%d", code.OpInfo * 8 + 8);
+                break;
+            case UWOP::SAVE_NONVOL:
+                printf("%s off %d", reg_strings[code.OpInfo], ui->UnwindCodes[i].FrameOffset * 8);
+                ++i;
+                break;
+            case UWOP::SAVE_XMM128:
+                printf("reg xmm%d off %d", code.OpInfo, ui->UnwindCodes[i].FrameOffset * 16);
+                ++i;
+                break;
+            default:
+                printf("???");
+                break;
+            }
+            printf("\n");
+        }
+    }
     void PrintFunctionTable()
     {
         int sectionNo = FindSection(".pdata");
@@ -1520,28 +1603,38 @@ public:
             if (s != nullptr)
             {
                 XData *xd = nullptr;
-                auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
-                printf("DD %lx %u %u %s prolog %u # codes %u -- ", * (unsigned long *) ui, ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
-                if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
+                if ((entry.UnwindInfoAddress & 1) != 0)
                 {
-                    printf(" ehandler %lx", ui->GetHandlerInfo().EHandler.ExceptionHandler);
-                    BasicBlock *excbb = FindBasicBlock(Rva(ui->GetHandlerInfo().EHandler.ExceptionHandler));
-                    if (excbb != nullptr)
-                    { 
-                        printf(" exc %s", excbb->GetLabel().c_str());
-                        if (excbb->GetLabel() == "__CxxFrameHandler3*")
+                    auto df = Rva2Ptr<RUNTIME_FUNCTION>(entry.UnwindInfoAddress & ~1u);
+                    printf(" %08x %08x %08x\n", df->BeginAddress, df->EndAddress, df->UnwindInfoAddress);
+
+                }
+                else
+                {
+                    auto ui = Rva2Ptr<UNWIND_INFO>(entry.UnwindInfoAddress);
+                    printf("DD %lx %u %u %s prolog %u # codes %u -- ", * (unsigned long *) ui, ui->Version, ui->Flags, ui->FlagString().c_str(), ui->SizeOfProlog, ui->CountOfCodes);
+                    if ((ui->Flags & UNW_FLAG_EHANDLER) != 0)
+                    {
+                        printf(" ehandler %lx", ui->GetHandlerInfo().EHandler.ExceptionHandler);
+                        BasicBlock *excbb = FindBasicBlock(Rva(ui->GetHandlerInfo().EHandler.ExceptionHandler));
+                        if (excbb != nullptr)
                         { 
-                            printf(" data %lx", ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
-                            xd = Rva2Ptr<XData>(ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                            printf(" exc %s", excbb->GetLabel().c_str());
+                            if (excbb->GetLabel() == "__CxxFrameHandler3*")
+                            { 
+                                printf(" data %lx", ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                                xd = Rva2Ptr<XData>(ui->GetHandlerInfo().EHandler.ExceptionHandlerData);
+                            }
                         }
                     }
-                }
 
-                if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
-                {
-                    printf(" function %lx %lx %lx", ui->GetHandlerInfo().FunctionEntry.FunctionStartAddress, ui->GetHandlerInfo().FunctionEntry.FunctionEndAddress, ui->GetHandlerInfo().FunctionEntry.UnwindInfoAddress);
+                    if ((ui->Flags & UNW_FLAG_CHAININFO) != 0)
+                    {
+                        printf(" function %lx %lx %lx", ui->GetHandlerInfo().FunctionEntry.FunctionStartAddress, ui->GetHandlerInfo().FunctionEntry.FunctionEndAddress, ui->GetHandlerInfo().FunctionEntry.UnwindInfoAddress);
+                    }
+                    printf("\n");
+                    PrintUnwind(ui);
                 }
-                printf("\n");
                 if (xd != nullptr)
                 {
                     printf("xdata %lx %lx %lx %lx EHflags %d\n", xd->magic, xd->unwindMapOffset, xd->tryMapOffset, xd->stateOffset, xd->EHFlags);
