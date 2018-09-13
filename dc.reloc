@@ -1,0 +1,50 @@
+Microsoft (R) COFF/PE Dumper Version 14.00.24215.1
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file dc.exe
+
+File Type: EXECUTABLE IMAGE
+
+BASE RELOCATIONS #6
+    3000 RVA,       38 SizeOfBlock
+     1C0  DIR64      0000000140001B68  _guard_check_icall_nop
+     1C8  DIR64      00000001400020F0  _guard_dispatch_icall_nop
+     1D8  DIR64      00000001400014AC
+     1F0  DIR64      00000001400013E0
+     1F8  DIR64      000000014000149C
+     230  DIR64      0000000140005000
+     238  DIR64      0000000140003240
+     310  DIR64      0000000140003508  ??_R4B@@6B@ (const B::`RTTI Complete Object Locator')
+     318  DIR64      00000001400012F0  ?m@B@@UEAAXXZ (public: virtual void __cdecl B::m(void))
+     328  DIR64      0000000140003588  ??_R4type_info@@6B@ (const type_info::`RTTI Complete Object Locator')
+     330  DIR64      00000001400013B4  ??_Etype_info@@UEAAPEAXI@Z (public: virtual void * __cdecl type_info::`vector deleting destructor'(unsigned int))
+     338  DIR64      0000000140003600  ??_R4exception@std@@6B@ (const std::exception::`RTTI Complete Object Locator')
+     340  DIR64      0000000140001760  ??_Ebad_alloc@std@@UEAAPEAXI@Z (public: virtual void * __cdecl std::bad_alloc::`vector deleting destructor'(unsigned int))
+     348  DIR64      00000001400017E4  ?what@exception@std@@UEBAPEBDXZ (public: virtual char const * __cdecl std::exception::what(void)const )
+     368  DIR64      0000000140003678  ??_R4bad_alloc@std@@6B@ (const std::bad_alloc::`RTTI Complete Object Locator')
+     370  DIR64      0000000140001760  ??_Ebad_alloc@std@@UEAAPEAXI@Z (public: virtual void * __cdecl std::bad_alloc::`vector deleting destructor'(unsigned int))
+     378  DIR64      00000001400017E4  ?what@exception@std@@UEBAPEBDXZ (public: virtual char const * __cdecl std::exception::what(void)const )
+     390  DIR64      00000001400036F8  ??_R4bad_array_new_length@std@@6B@ (const std::bad_array_new_length::`RTTI Complete Object Locator')
+     398  DIR64      0000000140001760  ??_Ebad_alloc@std@@UEAAPEAXI@Z (public: virtual void * __cdecl std::bad_alloc::`vector deleting destructor'(unsigned int))
+     3A0  DIR64      00000001400017E4  ?what@exception@std@@UEBAPEBDXZ (public: virtual char const * __cdecl std::exception::what(void)const )
+     478  DIR64      0000000140005028  __security_cookie
+     490  DIR64      00000001400031C0  __guard_check_icall_fptr
+     498  DIR64      00000001400031C8  __guard_dispatch_icall_fptr
+       0  ABS                        
+    5000 RVA,       14 SizeOfBlock
+      48  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+      60  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+      78  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+      98  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+      C0  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+      E8  DIR64      0000000140003330  ??_7type_info@@6B@ (const type_info::`vftable')
+
+  Summary
+
+        1000 .data
+        1000 .gfids
+        1000 .pdata
+        2000 .rdata
+        1000 .reloc
+        2000 .text

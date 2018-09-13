@@ -1,0 +1,82 @@
+﻿Build started 5/30/2017 9:12:02 PM.
+     1>Project "D:\Projects\petool\Utils\Utils.vcxproj" on node 2 (Build target(s)).
+     1>Building with tools version "12.0".
+       Project file contains ToolsVersion="14.0". This toolset may be unknown or missing, in which case you may be able to resolve this by installing the appropriate version of MSBuild, or the build may have been forced to a particular ToolsVersion for policy reasons. Treating the project as if it had ToolsVersion="12.0". For more information, please see http://go.microsoft.com/fwlink/?LinkId=293424.
+     1>Target "_CheckForInvalidConfigurationAndPlatform" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (entry point):
+       Task "Error" skipped, due to false condition; ( '$(_InvalidConfigurationError)' == 'true' ) was evaluated as ( '' == 'true' ).
+       Task "Warning" skipped, due to false condition; ( '$(_InvalidConfigurationWarning)' == 'true' ) was evaluated as ( '' == 'true' ).
+       Task "Message"
+         Configuration=Debug
+       Done executing task "Message".
+       Task "Message"
+         Platform=x64
+       Done executing task "Message".
+       Task "Error" skipped, due to false condition; ('$(OutDir)' != '' and !HasTrailingSlash('$(OutDir)')) was evaluated as ('D:\Projects\petool\x64\Debug\' != '' and !HasTrailingSlash('D:\Projects\petool\x64\Debug\')).
+       Task "Error" skipped, due to false condition; ('$(BaseIntermediateOutputPath)' != '' and !HasTrailingSlash('$(BaseIntermediateOutputPath)')) was evaluated as ('obj\' != '' and !HasTrailingSlash('obj\')).
+       Task "Error" skipped, due to false condition; ('$(IntermediateOutputPath)' != '' and !HasTrailingSlash('$(IntermediateOutputPath)')) was evaluated as ('x64\Debug\' != '' and !HasTrailingSlash('x64\Debug\')).
+     1>Done building target "_CheckForInvalidConfigurationAndPlatform" in project "Utils.vcxproj".
+     1>Target "_PrepareForBuild" in file "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.BuildSteps.Targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "Build" depends on it):
+       Task "CreateItem" skipped, due to false condition; ('%(CustomBuild.IncludeFileToTool)'!='') was evaluated as (''!='').
+     1>Done building target "_PrepareForBuild" in project "Utils.vcxproj".
+     1>Target "_PrepareForReferenceResolution" in file "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.CppBuild.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveReferences" depends on it):
+       Task "Message" skipped, due to false condition; ('$(_REFERENCE_DEBUG)'=='true') was evaluated as (''=='true').
+     1>Done building target "_PrepareForReferenceResolution" in project "Utils.vcxproj".
+       Target "ComputeCrtSDKReference" skipped, due to false condition; ('@(ClCompile)'!='' and '$(WindowsAppContainer)'=='true' and '$(UseCrtSDKReference)' != 'false') was evaluated as (''!='' and 'false'=='true' and '' != 'false').
+     1>Target "BeforeResolveReferences" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveReferences" depends on it):
+     1>Done building target "BeforeResolveReferences" in project "Utils.vcxproj".
+     1>Target "AssignProjectConfiguration" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveReferences" depends on it):
+       Task "AssignProjectConfiguration"
+       Done executing task "AssignProjectConfiguration".
+     1>Done building target "AssignProjectConfiguration" in project "Utils.vcxproj".
+       Target "AssignProjectConfiguration" skipped. Previously built successfully.
+     1>Target "_SplitProjectReferencesByFileExistence" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveProjectReferences" depends on it):
+       Task "ResolveNonMSBuildProjectOutput" skipped, due to false condition; ('$(BuildingInsideVisualStudio)'=='true' and '@(ProjectReferenceWithConfiguration)'!='') was evaluated as ('true'=='true' and ''!='').
+     1>Done building target "_SplitProjectReferencesByFileExistence" in project "Utils.vcxproj".
+       Target "_RemoveNameMetadataFromProjectReferenceItems" skipped, due to false condition; ('@(ProjectReference)'!='') was evaluated as (''!='').
+     1>Target "ResolveProjectReferences" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveReferences" depends on it):
+       Task "MSBuild" skipped, due to false condition; ('%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true' and '@(ProjectReferenceWithConfiguration)' != '' and ('$(BuildingInsideVisualStudio)' == 'true' or '$(BuildProjectReferences)' != 'true') and '$(VisualStudioVersion)' != '10.0' and '@(_MSBuildProjectReferenceExistent)' != '') was evaluated as ('' == 'true' and '' != '' and ('true' == 'true' or 'true' != 'true') and '12.0' != '10.0' and '' != '').
+       Task "MSBuild" skipped, due to false condition; ('%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true' and '@(ProjectReferenceWithConfiguration)' != '' and ('$(BuildingInsideVisualStudio)' == 'true' or '$(BuildProjectReferences)' != 'true') and '$(VisualStudioVersion)' == '10.0' and '@(_MSBuildProjectReferenceExistent)' != '') was evaluated as ('' == 'true' and '' != '' and ('true' == 'true' or 'true' != 'true') and '12.0' == '10.0' and '' != '').
+       Task "MSBuild" skipped, due to false condition; ('%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true' and '@(ProjectReferenceWithConfiguration)' != '' and '$(BuildingInsideVisualStudio)' != 'true' and '$(BuildProjectReferences)' == 'true' and '@(_MSBuildProjectReferenceExistent)' != '') was evaluated as ('' == 'true' and '' != '' and 'true' != 'true' and 'true' == 'true' and '' != '').
+       Task "MSBuild" skipped, due to false condition; ('%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true' and '@(ProjectReferenceWithConfiguration)' != '' and '$(BuildingProject)' == 'true' and '@(_MSBuildProjectReferenceExistent)' != '') was evaluated as ('' == 'true' and '' != '' and 'true' == 'true' and '' != '').
+       Task "Warning" skipped, due to false condition; ('@(ProjectReferenceWithConfiguration)' != '' and '@(_MSBuildProjectReferenceNonexistent)' != '') was evaluated as ('' != '' and '' != '').
+     1>Done building target "ResolveProjectReferences" in project "Utils.vcxproj".
+       Target "FindInvalidProjectReferences" skipped, due to false condition; ('$(FindInvalidProjectReferences)' == 'true') was evaluated as ('' == 'true').
+       Target "ResolveNativeReferences" skipped, due to false condition; ('@(NativeReference)'!='') was evaluated as (''!='').
+       Target "_PrepareForReferenceResolution" skipped. Previously built successfully.
+     1>Target "GetFrameworkPaths" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.NetFramework.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+     1>Done building target "GetFrameworkPaths" in project "Utils.vcxproj".
+       Target "GetWinFXPath" skipped, due to false condition; (('@(Page)' != '' or '@(ApplicationDefinition)' != '' or '@(Resource)' != '') and ('$(GetWinFXNativePath)' != '' or '$(GetWinFXWoWPath)' != '' )) was evaluated as (('' != '' or '' != '' or '' != '') and ('' != '' or '' != '' )).
+     1>Target "GetReferenceAssemblyPaths" in file "H:\Program Files (x86)\MSBuild\12.0\bin\Microsoft.Common.CurrentVersion.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+       Task "GetReferenceAssemblyPaths" skipped, due to false condition; ('$(TargetFrameworkMoniker)' != '' and ('$(_TargetFrameworkDirectories)' == '' or '$(_FullFrameworkReferenceAssemblyPaths)' == '')) was evaluated as ('' != '' and ('H:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0' == '' or 'H:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0' == '')).
+     1>Done building target "GetReferenceAssemblyPaths" in project "Utils.vcxproj".
+     1>Target "SetBuildDefaultEnvironmentVariables" in file "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.Cpp.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "PrepareForBuild" depends on it):
+       Using "SetEnv" task from assembly "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.Build.CppTasks.Common.dll".
+       Task "SetEnv"
+         PATH=H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\x86_amd64;H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin;H:\Program Files (x86)\Windows Kits\8.1\bin\x86;;H:\Program Files (x86)\Microsoft SDKs\Windows\v8.1A\bin\NETFX 4.5.1 Tools;H:\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\Tools\bin;H:\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\tools;H:\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\ide;H:\Program Files (x86)\HTML Help Workshop;;H:\Program Files (x86)\MSBuild\12.0\bin\;H:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\;;H:\PROGRAM FILES (X86)\MICROSOFT VISUAL STUDIO 12.0\COMMON7\IDE\COMMONEXTENSIONS\MICROSOFT\TEAMFOUNDATION\TEAM EXPLORER\NativeBinaries/x86;H:\ProgramData\Oracle\Java\javapath;H:\Program Files\Common Files\Microsoft Shared\Windows Live;H:\Program Files (x86)\Common Files\Microsoft Shared\Windows Live;H:\Program Files (x86)\PHP\;H:\Perl\site\bin;H:\Perl\bin;H:\Windows\system32;H:\Windows;H:\Windows\System32\Wbem;H:\Windows\System32\WindowsPowerShell\v1.0\;D:\Tools;H:\Program Files (x86)\Subversion\bin;H:\Program Files (x86)\Bazaar;H:\Program Files (x86)\Calibre2\;H:\Program Files (x86)\Windows Live\Shared;H:\Program Files (x86)\Microsoft ASP.NET\ASP.NET Web Pages\v1.0\;H:\Program Files\Microsoft Windows Performance Toolkit\;H:\Program Files\Microsoft\Web Platform Installer\;H:\Program Files (x86)\Toshiba\Bluetooth Toshiba Stack\sys\;H:\Program Files (x86)\Toshiba\Bluetooth Toshiba Stack\sys\x64\;H:\Program Files\Microsoft SQL Server\110\Tools\Binn\;H:\Program Files\TortoiseHg\;d:\Lua\5.1;d:\Lua\5.1\clibs;H:\Program Files (x86)\Common Files\Seagate\SnapAPI\;H:\Program Files (x86)\ATI Technologies\ATI.ACE\Core-Static;H:\Program Files (x86)\Windows Kits\8.1\Windows Performance Toolkit\;H:\Program Files (x86)\Microsoft SDKs\TypeScript\1.0\;H:\Program Files\Microsoft SQL Server\120\Tools\Binn\;H:\Go\bin;H:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;H:\Program Files\nodejs\;H:\WINDOWS\system32;H:\WINDOWS;H:\WINDOWS\System32\Wbem;H:\WINDOWS\System32\WindowsPowerShell\v1.0\;H:\WINDOWS\system32\config\systemprofile\.dnx\bin;H:\Program Files\Microsoft DNX\Dnvm\;H:\Program Files\Microsoft SQL Server\130\Tools\Binn\;H:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;H:\Program Files\Rust stable MSVC 1.13\bin;H:\Program Files\TortoiseGit\bin;d:\projects\depot_tools;H:\Users\bernard\.dnx\bin;d:\Tools;H:\Program Files (x86)\Microsoft Visual Studio 2008 SDK\VisualStudioIntegration\Tools\Sandcastle\ProductionTools\;H:\Program Files (x86)\Nmap;H:\Program Files\Rust stable 1.0\bin;H:\Users\bernard\AppData\Roaming\npm;H:\Users\bernard\AppData\Local\.meteor\;H:\Users\bernard\AppData\Local\atom\bin;H:\Program Files (x86)\Microsoft VS Code\bin;H:\Users\bernard\AppData\Local\Microsoft\WindowsApps;;
+       Done executing task "SetEnv".
+       Task "SetEnv"
+         LIB=H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib\amd64;H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\atlmfc\lib\amd64;H:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\um\x64;;
+       Done executing task "SetEnv".
+       Task "SetEnv"
+         LIBPATH=H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\atlmfc\lib\amd64;H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib\amd64;
+       Done executing task "SetEnv".
+       Task "SetEnv"
+         INCLUDE=H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\include;H:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\atlmfc\include;H:\Program Files (x86)\Windows Kits\8.1\Include\um;H:\Program Files (x86)\Windows Kits\8.1\Include\shared;H:\Program Files (x86)\Windows Kits\8.1\Include\winrt;;
+       Done executing task "SetEnv".
+     1>Done building target "SetBuildDefaultEnvironmentVariables" in project "Utils.vcxproj".
+       Target "SetUserMacroEnvironmentVariables" skipped, due to false condition; ('@(BuildMacro)' != '') was evaluated as ('' != '').
+     1>Target "GetResolvedWinMD" in file "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.CppBuild.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "PrepareForBuild" depends on it):
+     1>Done building target "GetResolvedWinMD" in project "Utils.vcxproj".
+     1>Target "PlatformPrepareForBuild" in file "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.Cpp.Platform.targets" from project "D:\Projects\petool\Utils\Utils.vcxproj" (target "PrepareForBuild" depends on it):
+       Task "VCMessage" skipped, due to false condition; ('$(_Error64bitToolsNotInstalled)' == 'true') was evaluated as ('' == 'true').
+       Task "VCMessage" skipped, due to false condition; ('$(ConfigurationPlatformExists)' != 'true') was evaluated as ('true' != 'true').
+       Using "VCMessage" task from assembly "H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.Build.CppTasks.Common.dll".
+       Task "VCMessage"
+     1>H:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V120\Microsoft.Cpp.Platform.targets(64,5): error MSB8020: The build tools for v140 (Platform Toolset = 'v140') cannot be found. To build using the v140 build tools, please install v140 build tools.  Alternatively, you may upgrade to the current Visual Studio tools by selecting the Project menu or right-click the solution, and then selecting "Upgrade Solution...".
+       Done executing task "VCMessage" -- FAILED.
+     1>Done building target "PlatformPrepareForBuild" in project "Utils.vcxproj" -- FAILED.
+     1>Done Building Project "D:\Projects\petool\Utils\Utils.vcxproj" (Build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:00.01

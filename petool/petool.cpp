@@ -1443,7 +1443,7 @@ public:
             BasicBlock *beginbb = FindBasicBlock(Rva(entry.BeginAddress));
             if (beginbb != nullptr)
                 printf("begin %s\n", beginbb->GetLabel().c_str());
-            printf("%08x %08x %08x\n", entry.BeginAddress, entry.EndAddress, entry.UnwindInfoAddress);
+            printf("%d: %08x %08x %08x\n", i, entry.BeginAddress, entry.EndAddress, entry.UnwindInfoAddress);
             auto s = Rva2Section(entry.UnwindInfoAddress);
             if (s != nullptr)
             {
