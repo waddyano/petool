@@ -49,63 +49,64 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
     printf("jump: ");
     
     SimplePrint(ci, va, dinst);
-        bool addJumpTable = false;
-        unsigned long sz;
+    bool addJumpTable = false;
+    unsigned long sz;
+
     if (dinst.opcode == I_MOVZX && dinst.ops[1].type == O_MEM && (dinst.base == bb->baseReg || (dinst.ops[1].index == bb->baseReg && dinst.ops[1].size == 8)))
-        {
-            BasicBlock *prevBB = nullptr;
-            BasicBlock t(bb->predecessors[0]);
-            auto it = m_basicBlocks.find(&t);
-            if (it != m_basicBlocks.end())
-            { 
-                sz = (*it)->jumpTableSize;
+    {
+        BasicBlock *prevBB = nullptr;
+        BasicBlock t(bb->predecessors[0]);
+        auto it = m_basicBlocks.find(&t);
+        if (it != m_basicBlocks.end())
+        { 
+            sz = (*it)->jumpTableSize;
             printf("disp %lld size %d base %s%s\n", dinst.disp, sz, GET_REGISTER_NAME(bb->baseReg), bb->baseReg != dinst.base ? " second" : "");
-                unsigned long max_off = 0;
-                for (unsigned long i = 0; i < sz; ++i)
-                { 
-                    unsigned long off;
+            unsigned long max_off = 0;
+            for (unsigned long i = 0; i < sz; ++i)
+            { 
+                unsigned long off;
                     
                 if (dinst.ops[1].size == 8)
-                        off = ((unsigned char *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                    off = ((unsigned char *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
                 else if (dinst.ops[1].size == 16)
-                        off = ((unsigned short *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                    off = ((unsigned short *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
                 else if (dinst.ops[1].size == 32)
-                        off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
-                    if (off > max_off)
-                        max_off = off;
-                }
-                printf("max off %lu\n", max_off);
-                jumpTableSize = max_off + 1;
-                addJumpTable = true;           
+                    off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+                if (off > max_off)
+                    max_off = off;
             }
+            printf("max off %lu\n", max_off);
+            jumpTableSize = max_off + 1;
+            addJumpTable = true;           
         }
+    }
 
     if (dinst.opcode == I_MOV && dinst.ops[1].type == O_MEM && dinst.ops[1].size == 32 && dinst.base == bb->baseReg)
-        {
-            BasicBlock *prevBB = nullptr;
-            BasicBlock t(bb->predecessors[0]);
-            auto it = m_basicBlocks.find(&t);
-            if (it != m_basicBlocks.end())
-            { 
-                sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
-                printf("disp %lld size %d\n", dinst.disp, sz);
+    {
+        BasicBlock *prevBB = nullptr;
+        BasicBlock t(bb->predecessors[0]);
+        auto it = m_basicBlocks.find(&t);
+        if (it != m_basicBlocks.end())
+        { 
+            sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
+            printf("disp %lld size %d\n", dinst.disp, sz);
             printf("offsets ");
-                std::set<Rva> added;
-                for (unsigned long i = 0; i < sz; ++i)
-                { 
-                    unsigned long off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
+            std::set<Rva> added;
+            for (unsigned long i = 0; i < sz; ++i)
+            { 
+                unsigned long off = ((unsigned long *)(m_text + (dinst.disp - m_textVa.ToUL())))[i];
                 printf(" %lx", off);
-                    Rva next(off);
-                    if (added.count(next) > 0)
-                        continue;
-                    added.insert(next);
-                    AddTargetToProcess(next, bb);
-                    bb->successors.push_back(next);
-                }
+                Rva next(off);
+                if (added.count(next) > 0)
+                    continue;
+                added.insert(next);
+                AddTargetToProcess(next, bb);
+                bb->successors.push_back(next);
+            }
             printf("\n");
 
-                addJumpTable = true;
-            }
+            addJumpTable = true;
+        }
 
         if (addJumpTable)
         { 

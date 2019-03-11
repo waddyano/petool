@@ -33,7 +33,7 @@ struct BasicBlock
         if (!label.empty())
             return label;
         char buf[64];
-        snprintf(buf, sizeof(buf), "%s_bb%u", isFunctionStart ? "fn" : "lab", id);
+        snprintf(buf, sizeof(buf), "%s_bb_%lx", isFunctionStart ? "fn" : "lab", start.ToUL());
         return buf;
     }
 
