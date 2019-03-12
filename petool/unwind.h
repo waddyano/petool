@@ -20,6 +20,8 @@ enum class UWOP
     SET_FPREG,       /* no info, FP = RSP + UNWIND_INFO.FPRegOffset*16 */  
     SAVE_NONVOL,     /* info == register number, offset in next slot */  
     SAVE_NONVOL_FAR, /* info == register number, offset in next 2 slots */  
+    EPILOG,
+    SPARE_CODE,
     SAVE_XMM128,     /* info == XMM reg number, offset in next slot */  
     SAVE_XMM128_FAR, /* info == XMM reg number, offset in next 2 slots */  
     PUSH_MACHFRAME   /* info == 0: no error-code, 1: error-code */  

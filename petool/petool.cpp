@@ -55,6 +55,8 @@ static const char *uwop_strings[] =
     "SET_FPREG",
     "SAVE_NONVOL",
     "SAVE_NONVOL_FAR",
+    "EPILOG",
+    "SPARE_CODE",
     "SAVE_XMM128",
     "SAVE_XMM128_FAR",
     "PUSH_MACHFRAME"
@@ -1253,18 +1255,29 @@ public:
                 printf("-- jt %lx %lx - element size %d --\n", bb->start.ToUL(), bb->length, bb->jumpTableElementSize);
                 for (unsigned int i = 0; i < bb->length / bb->jumpTableElementSize; ++i)
                 {
+                    unsigned long off;
                     if (bb->jumpTableElementSize == 1)
                     {
-                        printf(" db %02x\n", 0xff & bbPtr[i]);
+                        off = 0xff & bbPtr[i];
+                        printf(" db %02lx", off);
                     }
                     else if (bb->jumpTableElementSize == 2)
                     {
-                        printf(" dw %04x\n", 0xffff & ((unsigned short *)bbPtr)[i]);
+                        off =  0xffff & ((unsigned short *)bbPtr)[i];
+                        printf(" dw %04lx", off);
                     }
                     else if (bb->jumpTableElementSize == 4)
                     {
-                        printf(" dl %lx\n", 0xffff & ((unsigned long *)bbPtr)[i]);
+                        off = ((unsigned long *)bbPtr)[i];
+                        printf(" dl %lx", off);
                     }
+
+                    BasicBlock *t = FindBasicBlock(Rva(off));
+                    if (t != nullptr)
+                    {
+                        printf(" %s", t->GetLabel().c_str());
+                    }
+                    printf("\n");
                 }
             }
             else
@@ -1573,6 +1586,12 @@ public:
             case UWOP::SAVE_XMM128:
                 printf("reg xmm%d off %d", code.OpInfo, ui->UnwindCodes[i].FrameOffset * 16);
                 ++i;
+                break;
+            case UWOP::PUSH_MACHFRAME:
+                if (code.OpInfo == 0)
+                    printf("without error code");
+                else
+                    printf("with error code");
                 break;
             default:
                 printf("???");

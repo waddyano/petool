@@ -89,7 +89,7 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
         if (it != m_basicBlocks.end())
         { 
             sz = jumpTableSize > 0 ? jumpTableSize : (*it)->jumpTableSize;
-            printf("disp %lld size %d\n", dinst.disp, sz);
+            printf("disp %lld size %d op size %d\n", dinst.disp, sz, dinst.ops[1].size);
             printf("offsets ");
             std::set<Rva> added;
             for (unsigned long i = 0; i < sz; ++i)
@@ -107,16 +107,16 @@ bool BasicBlockAnalyzer::CheckForJumpTable(BasicBlock *bb, const _CodeInfo &ci, 
 
             addJumpTable = true;
         }
+    }
 
-        if (addJumpTable)
-        { 
-            auto jt = new BasicBlock();
-            jt->isJumpTable = true;
-            jt->start = Rva(dinst.disp);
-            jt->jumpTableElementSize = dinst.ops[1].size / 8;
-            jt->length = sz * jt->jumpTableElementSize;
-            m_basicBlocks.insert(jt);
-        }
+    if (addJumpTable)
+    { 
+        auto jt = new BasicBlock();
+        jt->isJumpTable = true;
+        jt->start = Rva(dinst.disp);
+        jt->jumpTableElementSize = dinst.ops[1].size / 8;
+        jt->length = sz * jt->jumpTableElementSize;
+        m_basicBlocks.insert(jt);
     }
 
     return true;
