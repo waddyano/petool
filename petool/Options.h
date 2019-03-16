@@ -17,5 +17,6 @@ public:
     bool ExtraVerbose = false;
     bool Edit = false;
     bool FixedAddress = false;
+    bool PrintFunctions = false;
     uint64_t AdjustedImageBase = 0;
 };

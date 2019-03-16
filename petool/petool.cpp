@@ -1463,6 +1463,10 @@ public:
 		    PrintRelocations();
             PrintFunctionTable();
         }
+        else if (m_options.PrintFunctions)
+        {
+            PrintFunctionTable();
+        }
 	}
 
     void PrintImports()
@@ -1592,6 +1596,8 @@ public:
                     printf("without error code");
                 else
                     printf("with error code");
+                break;
+            case UWOP::EPILOG:
                 break;
             default:
                 printf("???");
@@ -2291,6 +2297,8 @@ static int protectedMain(int argc, char *argv[])
                 options.ExtraVerbose = true;
             else if (strcmp(argv[i], "-imports") == 0)
                 options.PrintImports = true;
+            else if (strcmp(argv[i], "-functions") == 0)
+                options.PrintFunctions = true;
             else if (strcmp(argv[i], "-exports") == 0)
                 options.PrintExports = true;
             else if (strcmp(argv[i], "-imported_dlls") == 0)
