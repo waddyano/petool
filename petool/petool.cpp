@@ -1598,6 +1598,7 @@ public:
                     printf("with error code");
                 break;
             case UWOP::EPILOG:
+                printf(" size %d info %d offset  %d", ui->UnwindCodes[i].CodeOffset, ui->UnwindCodes[i].OpInfo, ui->UnwindCodes[i].OpInfo * 256 + ui->UnwindCodes[i].CodeOffset);
                 break;
             default:
                 printf("???");
